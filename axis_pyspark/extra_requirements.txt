@@ -1,0 +1,4 @@
+pyspark==3.5.4
+delta-spark
+pandas
+deltalake
