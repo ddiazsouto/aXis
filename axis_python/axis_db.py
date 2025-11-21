@@ -6,32 +6,79 @@ import os
 from dataclasses import dataclass
 import datetime
 
+import polars as pl
+
 from axis_python.functions.cosine_similarity import cosine_similarity
 
 
-@dataclass
-class vector_registry:
+
+class VectorRegistry:
+
     vectors: List[List[float]]
+    input: List[str]
     created_datetime: List[datetime.datetime]
     payloads: List[Dict[str, Any]]
-    as_timestamp: datetime.datetime
+    origin_datetime: datetime.datetime
+    collection_name: str
+
+    def __init__(self, path: str):
+        self.path = path
+
+    def load(self, collection: str = "main"):
+        if os.path.exists(self.path):
+            try:
+                with open(self.path, "r") as f:
+                    data = json.load(f)
+                collection = data.get(self.collection, None)
+                if collection is None:
+                    raise ValueError(f"Collection {self.collection} not found in {self.path}")    
+                self.vectors = collection.get("vectors", [])
+                self.payloads = collection.get("payloads", [])
+                self.origin_datetime = collection.get("origin_datetime", None)
+                self.collection_name = collection
+
+                print(f"Loaded {len(self.vector_registry.vectors)} vectors from {self.path}")
+            except Exception as e:
+                print(f"Failed to load {self.path}: {e}")
+
+    def save(self): ## TODO: neds alignment with collection
+        data = {
+            "vectors": self.vector_registry.vectors,
+            "payloads": self.vector_registry.payloads
+        }
+        with open(self.path, "w") as f:
+            json.dump(data, f, indent=2)
+
+    
+    def show_collection_data(self, start_datetime: datetime.datetime = None):
+
+        start_datetime = start_datetime
+        if start_datetime is None:
+            start_datetime = self.origin_datetime
+
+        df = pl.DataFrame({
+            "input": self.input,
+            "payload": self.payloads,
+            "created_datetime": self.created_datetime,
+        }).where(
+            pl.col("created_datetime") > datetime.datetime.now()
+        )
+
+
 
 class aXisDB:
+
     def __init__(self, path: str = "axis.db"):
         self.path = path
         self.embedder = SentenceTransformer('all-MiniLM-L6-v2')
         self._vector_registry = None
-        self.load()    
 
     @property
-    def vector_registry(self) -> vector_registry:
+    def vector_registry(self) -> VectorRegistry:
         if self._vector_registry is None:
-            self._vector_registry = vector_registry(
-                vectors=[],
-                created_datetime=[],
-                payloads=[],
-                as_timestamp=datetime.datetime.now()
-            )
+            self._vector_registry = VectorRegistry(self.path)
+            self._vector_registry.load()
+
         return self._vector_registry
 
     def insert(self, text: str, payload: Dict[str, Any]):
@@ -64,21 +111,3 @@ class aXisDB:
             for i in top_idx
         ]
 
-    def save(self):
-        data = {
-            "vectors": self.vector_registry.vectors,
-            "payloads": self.vector_registry.payloads
-        }
-        with open(self.path, "w") as f:
-            json.dump(data, f, indent=2)
-
-    def load(self):
-        if os.path.exists(self.path):
-            try:
-                with open(self.path, "r") as f:
-                    data = json.load(f)
-                self.vector_registry.vectors = data.get("vectors", [])
-                self.vector_registry.payloads = data.get("payloads", [])
-                print(f"Loaded {len(self.vector_registry.vectors)} vectors from {self.path}")
-            except Exception as e:
-                print(f"Failed to load {self.path}: {e}")
