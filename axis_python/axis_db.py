@@ -19,19 +19,21 @@ class VectorRegistry:
     created_datetime: List[datetime.datetime]
     payloads: List[Dict[str, Any]]
     origin_datetime: datetime.datetime
+    last_updated_datetime: datetime.datetime
     collection_name: str
 
     def __init__(self, path: str):
         self.path = path
+        self.collection_name = None
 
     def load(self, collection: str = "main"):
         if os.path.exists(self.path):
             try:
                 with open(self.path, "r") as f:
                     data = json.load(f)
-                collection = data.get(self.collection, None)
+                collection = data.get(collection, None)
                 if collection is None:
-                    raise ValueError(f"Collection {self.collection} not found in {self.path}")    
+                    raise ValueError(f"Collection {collection} not found in {self.path}")    
                 self.vectors = collection.get("vectors", [])
                 self.payloads = collection.get("payloads", [])
                 self.origin_datetime = collection.get("origin_datetime", None)
@@ -41,11 +43,17 @@ class VectorRegistry:
             except Exception as e:
                 print(f"Failed to load {self.path}: {e}")
 
-    def save(self): ## TODO: neds alignment with collection
-        data = {
+    def save(self):
+        collection_data = {
+            "input": self.input,
+            "created_datetime": self.created_datetime,
             "vectors": self.vector_registry.vectors,
             "payloads": self.vector_registry.payloads
         }
+        with open(self.path, "r") as f:
+            data = json.load(f)
+
+        data[self.collection_name].update(collection_data)
         with open(self.path, "w") as f:
             json.dump(data, f, indent=2)
 
