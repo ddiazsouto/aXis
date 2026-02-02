@@ -67,7 +67,6 @@ class VectorRegistry:
             raise
 
     def save(self) -> None:        
-        # Collect payloads (either from insertions or load all if needed)
         payloads_to_save = getattr(self, '_insertion_payloads', [])
         
 
@@ -81,9 +80,8 @@ class VectorRegistry:
                 pass
             
             all_payloads = existing_payloads + payloads_to_save
-            self._insertion_payloads = []  # Clear after save
+            self._insertion_payloads = [] 
         else:
-            # No new insertions, load existing payloads
             all_payloads = []
             try:
                 with open(self.path, "rb") as f:
