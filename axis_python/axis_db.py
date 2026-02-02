@@ -22,12 +22,11 @@ class VectorRegistry:
         self.path = path
         self.collection_name: str = "main"
         self.vectors: List[List[float]] = []
-        self.payloads: List[Dict[str, Any]] = []
         self.created_datetime: List[dt] = []
         self.origin_datetime: Optional[dt] = None
 
-    def load(self, collection: str = "main") -> None:
-        """Load only the specified collection from disk, ignoring others."""
+    def lazy_load(self, collection: str = "main") -> None:
+        """Load only vectors from the specified collection, keeping payloads for lazy loading."""
         self.collection_name = collection
         if not os.path.exists(self.path):
             logger.info(f"Database file {self.path} does not exist yet, starting with empty data")
@@ -35,43 +34,68 @@ class VectorRegistry:
 
         try:
             with open(self.path, "rb") as f:
-                # Use ijson to stream only the target collection
-                parser = ijson.kvitems(f, "")
-                for key, value in parser:
-                    if key == collection:
-                        self._parse_collection_data(value)
-                        return
+                # Stream only vectors from target collection
+                vector_count = 0
+                for vector in ijson.items(f, f"{collection}.vectors.item"):
+                    self.vectors.append([float(v) for v in vector])
+                    vector_count += 1
                 
-                # Collection not found
-                logger.info(f"Collection '{collection}' not found, starting with empty data")
+                if vector_count == 0:
+                    logger.info(f"Collection '{collection}' not found or empty, starting with empty data")
+                    return
+                
+                logger.info(f"Loaded {vector_count} vectors from {self.path}")
+            
         except Exception as e:
             logger.error(f"Failed to load {self.path}: {e}")
             raise
 
-    def _parse_collection_data(self, collection_data: Dict[str, Any]) -> None:
-        """Parse collection data from JSON, converting datetimes and numbers as needed."""
-        # Convert Decimal objects from ijson to floats
-        vectors_data = collection_data.get("vectors", [])
-        self.vectors = [
-            [float(v) for v in vector] if isinstance(vector, list) else vector 
-            for vector in vectors_data
-        ]
+    def get_payload_at_index(self, payload_index: int) -> Dict[str, Any]:
+        """Efficiently retrieve a specific payload by index without loading all payloads."""
+        if payload_index < 0 or payload_index >= len(self.vectors):
+            raise IndexError(f"Payload index {payload_index} out of range")
         
-        self.payloads = collection_data.get("payloads", [])
-        
-        created_dt_data = collection_data.get("created_datetime", [])
-        self.created_datetime = [dt.fromisoformat(d) if isinstance(d, str) else d for d in created_dt_data]
-        
-        origin_dt = collection_data.get("origin_datetime")
-        self.origin_datetime = dt.fromisoformat(origin_dt) if origin_dt else None
-        
-        logger.info(f"Loaded {len(self.vectors)} vectors from {self.path}")
+        try:
+            with open(self.path, "rb") as f:
+                for index, payload in enumerate(ijson.items(f, f"{self.collection_name}.payloads.item")):
+                    if index == payload_index:
+                        return payload
+            
+            raise IndexError(f"Payload at index {payload_index} not found")
+        except Exception as e:
+            logger.error(f"Failed to retrieve payload at index {index}: {e}")
+            raise
 
     def save(self) -> None:        
+        # Collect payloads (either from insertions or load all if needed)
+        payloads_to_save = getattr(self, '_insertion_payloads', [])
+        
+
+        if payloads_to_save:
+            existing_payloads = []
+            try:
+                with open(self.path, "rb") as f:
+                    for payload in ijson.items(f, f"{self.collection_name}.payloads.item"):
+                        existing_payloads.append(payload)
+            except:
+                pass
+            
+            all_payloads = existing_payloads + payloads_to_save
+            self._insertion_payloads = []  # Clear after save
+        else:
+            # No new insertions, load existing payloads
+            all_payloads = []
+            try:
+                with open(self.path, "rb") as f:
+                    for payload in ijson.items(f, f"{self.collection_name}.payloads.item"):
+                        all_payloads.append(payload)
+            except:
+                pass
+        
         collection_data = {
             "vectors": self.vectors,
-            "payloads": self.payloads,
-            "created_datetime": [dt.isoformat() if isinstance(dt, dt.__class__) else dt for dt in self.created_datetime],
+            "payloads": all_payloads,
+            "created_datetime": [d.isoformat() if isinstance(d, dt) else d for d in self.created_datetime],
             "origin_datetime": self.origin_datetime.isoformat() if self.origin_datetime else None,
         }
         
@@ -94,18 +118,10 @@ class VectorRegistry:
             logger.error(f"Failed to save {self.path}: {e}")
             raise
 
-    def get_collection_dataframe(self, start_datetime: Optional[dt] = None) -> pl.DataFrame:
-        filter_datetime = start_datetime or self.origin_datetime
-        
-        df = pl.DataFrame({
-            "payload": self.payloads,
-            "created_datetime": self.created_datetime,
-        })
-        
-        if filter_datetime:
-            df = df.filter(pl.col("created_datetime") > filter_datetime)
-        
-        return df
+    @property
+    def payload_count(self) -> int:
+        """Return the number of payloads (same as vector count)."""
+        return len(self.vectors)
 
 
 
@@ -123,7 +139,7 @@ class aXisDB:
         """Lazy-load vector registry on first access."""
         if self._vector_registry is None:
             self._vector_registry = VectorRegistry(self.path)
-            self._vector_registry.load()
+            self._vector_registry.lazy_load()
         return self._vector_registry
 
     def switch_collection(self, collection: str = "main") -> None:
@@ -132,7 +148,7 @@ class aXisDB:
             self._vector_registry.save()
         
         self._vector_registry = VectorRegistry(self.path)
-        self._vector_registry.load(collection)
+        self._vector_registry.lazy_load(collection)
         logger.info(f"Switched to collection '{collection}'")
 
     def insert(self, text: str, payload: Dict[str, Any]) -> None:
@@ -141,7 +157,12 @@ class aXisDB:
         payload["text"] = text
         
         self.vector_registry.vectors.append(vector)
-        self.vector_registry.payloads.append(payload)
+        
+        # For insertion, we need to temporarily store payloads to save
+        if not hasattr(self.vector_registry, '_insertion_payloads'):
+            self.vector_registry._insertion_payloads = []
+        self.vector_registry._insertion_payloads.append(payload)
+        
         self.vector_registry.created_datetime.append(dt.now())
         
         if self.vector_registry.origin_datetime is None:
@@ -150,7 +171,7 @@ class aXisDB:
         self.vector_registry.save()
 
     def search(self, query: str, top_k: int = 3) -> List[Dict[str, Any]]:
-        """Semantic search using cosine similarity."""
+        """Semantic search using cosine similarity, retrieving payloads on-demand."""
         if not self.vector_registry.vectors:
             return []
         
@@ -163,11 +184,12 @@ class aXisDB:
         
         results = []
         for i in top_idx:
+            payload = self.vector_registry.get_payload_at_index(i)
             result = {
                 "score": round(float(scores[i]), 4),
-                "text": self.vector_registry.payloads[i]["text"],
+                "text": payload.get("text", ""),
             }
-            result.update({k: v for k, v in self.vector_registry.payloads[i].items() if k != "text"})
+            result.update({k: v for k, v in payload.items() if k != "text"})
             results.append(result)
         
         return results
