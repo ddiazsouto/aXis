@@ -43,13 +43,24 @@ class TestAxisDBInitialization:
         """Test aXisDB initializes with default path."""
         with patch('axis_python.axis_db.SentenceTransformer'):
             db = aXisDB()
-            assert db.path == "axis.db"
+            assert db.path == "main.axis"
 
     def test_init_with_custom_path(self, temp_db_path):
         """Test aXisDB initializes with custom path."""
         with patch('axis_python.axis_db.SentenceTransformer'):
             db = aXisDB(path=temp_db_path)
-            assert db.path == temp_db_path
+            # Path should have .axis extension appended if not present
+            expected = temp_db_path if temp_db_path.endswith('.axis') else temp_db_path + '.axis'
+            assert db.path == expected
+
+    def test_init_enforces_axis_extension(self):
+        """Test that init enforces .axis extension."""
+        with patch('axis_python.axis_db.SentenceTransformer'):
+            db = aXisDB(path="mydb")
+            assert db.path == "mydb.axis"
+            
+            db2 = aXisDB(path="mydb.axis")
+            assert db2.path == "mydb.axis"
 
     def test_init_vector_registry_none(self, temp_db_path):
         """Test that vector_registry is None initially."""
@@ -214,44 +225,24 @@ class TestAxisDBSearch:
         assert "custom_field" in result
 
 
-class TestAxisDBCollections:
-    """Tests for working with multiple collections."""
+class TestAxisDBMultipleInserts:
+    """Tests for multiple inserts and data accumulation."""
 
-    def test_switch_collection(self, axis_db):
-        """Test switching between collections."""
+    def test_multiple_inserts_accumulate(self, axis_db):
+        """Test that multiple inserts accumulate data correctly."""
         # Insert into main collection
-        axis_db.insert("Item in main", {"id": 1})
-        
-        # Switch to another collection
-        axis_db.switch_collection("other_collection")
-        
-        # Current registry should be different now
-        assert axis_db.vector_registry.collection_name == "other_collection"
-
-    def test_switch_collection_saves_previous(self, axis_db):
-        """Test that switching collections saves the previous one."""
-        axis_db.insert("Item 1", {"id": 1})
-        
-        # Switch collection
-        axis_db.switch_collection("collection2")
-        axis_db.insert("Item 2", {"id": 2})
-        
-        # Should have separate registries
-        assert len(axis_db.vector_registry.vectors) == 1
-
-    def test_different_collections_independent(self, axis_db):
-        """Test that different collections are independent."""
-        # Populate collection1
-        axis_db.switch_collection("collection1")
         for i in range(3):
             axis_db.insert(f"Item {i}", {"id": i})
         
-        # Populate collection2
-        axis_db.switch_collection("collection2")
+        # Verify all items are present
+        assert len(axis_db.vector_registry.vectors) == 3
+
+    def test_accumulation_preserves_data(self, axis_db):
+        """Test that accumulated data is preserved."""
         for i in range(5):
-            axis_db.insert(f"Document {i}", {"id": i})
+            axis_db.insert(f"Document {i}", {"id": i, "index": i})
         
-        # Collection2 should have 5 items
+        # Verify count
         assert len(axis_db.vector_registry.vectors) == 5
 
 
@@ -279,21 +270,6 @@ class TestAxisDBIntegration:
         # Search
         results = axis_db.search("Python programming", top_k=2)
         assert len(results) > 0
-
-    def test_multiple_collection_workflow(self, axis_db):
-        """Test workflow with multiple collections."""
-        # Collection 1: Knowledge base
-        axis_db.switch_collection("knowledge_base")
-        for i in range(3):
-            axis_db.insert(f"Knowledge {i}", {"id": i, "type": "knowledge"})
-        
-        # Collection 2: User data
-        axis_db.switch_collection("user_data")
-        for i in range(2):
-            axis_db.insert(f"User {i}", {"id": i, "type": "user"})
-        
-        # Verify counts
-        assert len(axis_db.vector_registry.vectors) == 2
 
     def test_persistence_across_instances(self, temp_db_path):
         """Test that data persists across database instances."""

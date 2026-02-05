@@ -13,13 +13,16 @@ from axis_python.vector_registry import VectorRegistry
 class aXisDB:
     """Vector database with semantic search capabilities."""
 
-    def __init__(self, path: str = "axis.db"):
+    def __init__(self, path: str = "main"):
+        if not path.endswith('.axis'):
+            path = f"{path}.axis"
+        
         self.path = path
         model_path = os.path.join(os.path.dirname(__file__), 'models', 'all-MiniLM-L6-v2')
         self.embedder = SentenceTransformer(model_path, local_files_only=True)
         self._vector_registry: Optional[VectorRegistry] = None
         self.logger = logging.getLogger(__name__)
-        self.logger.debug(f"Initialized aXisDB with path: {self.path} and embedder model: {model_path}")
+        self.logger.info(f"aXisDB initialized with database: {self.path}")
 
     @property
     def vector_registry(self) -> VectorRegistry:

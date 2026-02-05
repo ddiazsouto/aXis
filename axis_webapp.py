@@ -17,14 +17,11 @@ logger = logging.getLogger(__name__)
 current_db = None
 current_db_path = None
 
-# Default database
-DEFAULT_DB_PATH = os.path.join(os.path.dirname(__file__), "opmisizedst.db")
-
 
 def get_available_databases():
-    """Scan for .db files in the workspace."""
+    """Scan for .axis files in the workspace."""
     db_dir = os.path.dirname(__file__)
-    db_files = list(Path(db_dir).glob("*.db"))
+    db_files = list(Path(db_dir).glob("*.axis"))
     return [str(f.name) for f in db_files]
 
 
@@ -40,13 +37,22 @@ def load_database(db_name):
     if not os.path.exists(db_path):
         raise FileNotFoundError(f"Database not found: {db_name}")
     
-    current_db = aXisDB(db_path)
+    current_db = aXisDB(db_name)
     current_db_path = db_path
-    logger.info(f"Loaded database: {db_path}")
+    logger.info(f"Loaded database: {db_name}")
 
 
-# Load default database on startup
-load_database(os.path.basename(DEFAULT_DB_PATH))
+available_databases = get_available_databases()
+
+if not available_databases:
+    raise NotImplementedError(
+        "No .axis databases found in the directory. "
+        "Please add a database file to get started."
+    )
+if "main.axis" in available_databases:
+    load_database("main.axis")
+else:
+    load_database(available_databases[0])
 
 
 @app.route("/")
@@ -152,7 +158,6 @@ def insert():
         if not text:
             return jsonify({"error": "Text is required"}), 400
         
-        # Insert into the database
         current_db.insert(text, payload)
         
         return jsonify({
