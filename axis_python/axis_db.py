@@ -5,10 +5,9 @@ from sentence_transformers import SentenceTransformer
 from typing import List, Dict, Any, Optional
 import os
 
-from axis_python.vector_registry import VectorRegistry
 from axis_python.functions.cosine_similarity import cosine_similarity
+from axis_python.vector_registry import VectorRegistry
 
-logger = logging.getLogger(__name__)
 
 
 class aXisDB:
@@ -19,6 +18,8 @@ class aXisDB:
         model_path = os.path.join(os.path.dirname(__file__), 'models', 'all-MiniLM-L6-v2')
         self.embedder = SentenceTransformer(model_path, local_files_only=True)
         self._vector_registry: Optional[VectorRegistry] = None
+        self.logger = logging.getLogger(__name__)
+        self.logger.debug(f"Initialized aXisDB with path: {self.path} and embedder model: {model_path}")
 
     @property
     def vector_registry(self) -> VectorRegistry:
@@ -27,21 +28,6 @@ class aXisDB:
             self._vector_registry = VectorRegistry(self.path)
             self._vector_registry.lazy_load()
         return self._vector_registry
-
-    def switch_collection(self, collection: str = "main") -> None:
-        """
-        Description:
-            Switch to a different collection, saving current state first.
-        Args:
-            collection: str
-                Name of the collection to switch to (default: "main")
-        """
-        if self._vector_registry is not None:
-            self._vector_registry.save()
-        
-        self._vector_registry = VectorRegistry(self.path)
-        self._vector_registry.lazy_load(collection)
-        logger.info(f"Switched to collection '{collection}'")
 
     def insert(self, text: str, payload: Dict[str, Any]) -> None:
         """

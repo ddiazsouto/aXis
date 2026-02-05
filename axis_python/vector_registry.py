@@ -17,9 +17,6 @@ class VectorRegistry:
         self.path = path
         self.collection_name: str = "main"
         self.vectors: np.ndarray = np.empty((0, 384), dtype=np.float32)  # Start with empty array
-        self.created_datetime: List[dt] = []
-        self.origin_datetime: Optional[dt] = None
-        self._payload_cache: Dict[int, Dict[str, Any]] = {}
 
     def lazy_load(self, collection: str = "main") -> None:
         """
@@ -69,9 +66,6 @@ class VectorRegistry:
         if payload_index < 0 or payload_index >= len(self.vectors):
             raise IndexError(f"Payload index {payload_index} out of range")
         
-        if payload_index in self._payload_cache:
-            return self._payload_cache[payload_index]
-        
         try:
             with h5py.File(self.path, 'r') as f:
                 group = f.get(self.collection_name)
@@ -84,7 +78,6 @@ class VectorRegistry:
                 
                 payload_str = payloads_ds[payload_index].decode('utf-8')
                 payload = json.loads(payload_str)
-                self._payload_cache[payload_index] = payload
                 return payload
             
         except Exception as e:
@@ -136,11 +129,6 @@ class VectorRegistry:
                     compression="gzip",
                     compression_opts=4
                 )
-                
-                if self.created_datetime:
-                    group.attrs['created_datetime'] = [d.isoformat() for d in self.created_datetime]
-                if self.origin_datetime:
-                    group.attrs['origin_datetime'] = self.origin_datetime.isoformat()
             
             logger.debug(f"Saved collection '{self.collection_name}' to {self.path} (optimized for vector speed)")
         
