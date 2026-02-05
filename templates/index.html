@@ -1,0 +1,1058 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>aXis - Vector Database</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Courier New', monospace;
+            background: #000000;
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            color: #fff;
+            overflow: hidden;
+        }
+
+        /* Animated background */
+        @keyframes gradientShift {
+            0% { background-position: 0% 50%; }
+            50% { background-position: 100% 50%; }
+            100% { background-position: 0% 50%; }
+        }
+
+        body::before {
+            content: '';
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: #000000;
+            z-index: -1;
+        }
+
+        .container {
+            width: 100%;
+            max-width: 800px;
+            padding: 20px;
+            margin-left: 0;
+            transition: margin-left 0.3s ease;
+        }
+
+        /* ===== HAMBURGER MENU ===== */
+        .hamburger-menu {
+            position: fixed;
+            left: 0;
+            top: 0;
+            width: 280px;
+            height: 100vh;
+            background: rgba(0, 0, 0, 0.95);
+            border-right: 1px solid rgba(0, 212, 255, 0.2);
+            transform: translateX(-100%);
+            transition: transform 0.3s ease;
+            z-index: 900;
+            overflow-y: auto;
+            padding-top: 60px;
+        }
+
+        .hamburger-menu.open {
+            transform: translateX(0);
+        }
+
+        .menu-header {
+            padding: 20px;
+            border-bottom: 1px solid rgba(0, 212, 255, 0.15);
+            margin-bottom: 20px;
+        }
+
+        .menu-title {
+            font-size: 14px;
+            color: #00d4ff;
+            letter-spacing: 2px;
+            text-transform: uppercase;
+        }
+
+        .menu-item {
+            padding: 15px 20px;
+            color: #e0e0e0;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            border-left: 2px solid transparent;
+        }
+
+        .menu-item:hover {
+            background: rgba(0, 212, 255, 0.08);
+            border-left-color: #00d4ff;
+            color: #00d4ff;
+        }
+
+        .menu-item.active {
+            background: rgba(0, 212, 255, 0.15);
+            border-left-color: #00d4ff;
+        }
+
+        /* Hamburger Toggle Button */
+        .hamburger-toggle {
+            position: fixed;
+            left: 20px;
+            top: 20px;
+            width: 40px;
+            height: 40px;
+            background: rgba(0, 212, 255, 0.08);
+            border: 1px solid rgba(0, 212, 255, 0.2);
+            border-radius: 8px;
+            cursor: pointer;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            gap: 6px;
+            z-index: 901;
+            transition: all 0.3s ease;
+        }
+
+        .hamburger-toggle:hover {
+            background: rgba(0, 212, 255, 0.15);
+            border-color: rgba(0, 212, 255, 0.4);
+        }
+
+        .hamburger-line {
+            width: 20px;
+            height: 1.5px;
+            background: #00d4ff;
+            transition: all 0.3s ease;
+        }
+
+        .hamburger-menu.open ~ .hamburger-toggle .hamburger-line:nth-child(1) {
+            transform: rotate(45deg) translateY(10px);
+        }
+
+        .hamburger-menu.open ~ .hamburger-toggle .hamburger-line:nth-child(2) {
+            opacity: 0;
+        }
+
+        .hamburger-menu.open ~ .hamburger-toggle .hamburger-line:nth-child(3) {
+            transform: rotate(-45deg) translateY(-10px);
+        }
+
+        /* Modal for Insert */
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.7);
+            z-index: 950;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .modal.open {
+            display: flex;
+        }
+
+        .modal-content {
+            background: rgba(15, 12, 41, 0.95);
+            border: 2px solid rgba(0, 212, 255, 0.3);
+            border-radius: 12px;
+            padding: 30px;
+            max-width: 500px;
+            width: 90%;
+            max-height: 80vh;
+            overflow-y: auto;
+            animation: slideUp 0.4s ease-out;
+        }
+
+        @keyframes slideUp {
+            from {
+                transform: translateY(50px);
+                opacity: 0;
+            }
+            to {
+                transform: translateY(0);
+                opacity: 1;
+            }
+        }
+
+        .modal-header {
+            font-size: 24px;
+            color: #00d4ff;
+            margin-bottom: 20px;
+            letter-spacing: 2px;
+        }
+
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        .form-label {
+            display: block;
+            margin-bottom: 8px;
+            color: #00d4ff;
+            font-size: 14px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .form-input {
+            width: 100%;
+            padding: 12px;
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid rgba(0, 212, 255, 0.2);
+            border-radius: 8px;
+            color: #fff;
+            font-family: 'Courier New', monospace;
+            font-size: 14px;
+            transition: all 0.3s ease;
+            outline: none;
+        }
+
+        .form-input:focus {
+            border-color: #00d4ff;
+            background: rgba(0, 212, 255, 0.02);
+            box-shadow: 0 0 15px rgba(0, 212, 255, 0.15);
+        }
+
+        .form-textarea {
+            resize: vertical;
+            min-height: 100px;
+        }
+
+        .modal-buttons {
+            display: flex;
+            gap: 10px;
+            margin-top: 20px;
+        }
+
+        .modal-btn {
+            flex: 1;
+            padding: 11px;
+            border: 1px solid rgba(0, 212, 255, 0.25);
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: 500;
+            letter-spacing: 1px;
+            transition: all 0.3s ease;
+            text-transform: uppercase;
+            font-size: 12px;
+        }
+
+        .modal-btn.submit {
+            background: rgba(0, 212, 255, 0.1);
+            color: #00d4ff;
+        }
+
+        .modal-btn.submit:hover {
+            background: rgba(0, 212, 255, 0.15);
+            border-color: rgba(0, 212, 255, 0.4);
+            box-shadow: 0 0 12px rgba(0, 212, 255, 0.08);
+            transform: translateY(-1px);
+        }
+
+        .modal-btn.cancel {
+            background: rgba(255, 255, 255, 0.03);
+            color: #999999;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .modal-btn.cancel:hover {
+            background: rgba(255, 255, 255, 0.06);
+            border-color: rgba(255, 255, 255, 0.15);
+            color: #c0c0c0;
+        }
+
+        /* ===== SPLASH SCREEN ===== */
+        .splash-screen {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: #000000;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+            animation: fadeOut 0.6s ease-in-out 1.8s forwards;
+        }
+
+        @keyframes fadeOut {
+            from {
+                opacity: 1;
+                visibility: visible;
+            }
+            to {
+                opacity: 0;
+                visibility: hidden;
+            }
+        }
+
+        .logo-container {
+            text-align: center;
+            position: relative;
+        }
+
+        .axis-logo {
+            font-size: 120px;
+            font-weight: bold;
+            letter-spacing: 20px;
+            background: linear-gradient(45deg, #00d4ff, #0099ff, #00d4ff);
+            background-size: 200% 200%;
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            animation: glow-pulse 1.5s ease-in-out infinite, shimmer 2s ease-in-out infinite;
+            filter: drop-shadow(0 0 30px rgba(0, 212, 255, 0.8));
+        }
+
+        @keyframes glow-pulse {
+            0%, 100% {
+                opacity: 0.6;
+                transform: scale(0.95);
+            }
+            50% {
+                opacity: 1;
+                transform: scale(1.05);
+            }
+        }
+
+        @keyframes shimmer {
+            0% { background-position: 0% 50%; }
+            50% { background-position: 100% 50%; }
+            100% { background-position: 0% 50%; }
+        }
+
+        .glow-ring {
+            position: absolute;
+            width: 300px;
+            height: 300px;
+            border: 2px solid rgba(0, 212, 255, 0.5);
+            border-radius: 50%;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            animation: expand-ring 2s ease-out infinite;
+        }
+
+        @keyframes expand-ring {
+            0% {
+                width: 300px;
+                height: 300px;
+                opacity: 1;
+            }
+            100% {
+                width: 500px;
+                height: 500px;
+                opacity: 0;
+            }
+        }
+
+        .glow-ring:nth-child(2) {
+            animation-delay: 0.5s;
+        }
+
+        /* ===== MAIN INTERFACE ===== */
+        .main-interface {
+            opacity: 0;
+            animation: fadeIn 0.8s ease-in-out 1.8s forwards;
+        }
+
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(20px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .header {
+            text-align: center;
+            margin-bottom: 40px;
+        }
+
+        .title {
+            font-size: 48px;
+            font-weight: bold;
+            margin-bottom: 10px;
+            background: linear-gradient(45deg, #00d4ff, #0099ff);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            letter-spacing: 8px;
+            text-transform: uppercase;
+        }
+
+        .subtitle {
+            font-size: 13px;
+            color: #00d4ff;
+            letter-spacing: 3px;
+            opacity: 0.7;
+            text-transform: uppercase;
+        }
+
+        /* ===== SEARCH BOX ===== */
+        .search-container {
+            margin-bottom: 30px;
+        }
+
+        .search-input-wrapper {
+            position: relative;
+            display: flex;
+            gap: 10px;
+        }
+
+        .search-input {
+            flex: 1;
+            padding: 16px 20px;
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid rgba(0, 212, 255, 0.2);
+            border-radius: 8px;
+            color: #fff;
+            font-family: 'Courier New', monospace;
+            font-size: 16px;
+            transition: all 0.3s ease;
+            outline: none;
+        }
+
+        .search-input:focus {
+            border-color: #00d4ff;
+            background: rgba(0, 212, 255, 0.02);
+            box-shadow: 0 0 15px rgba(0, 212, 255, 0.15);
+        }
+
+        .search-input::placeholder {
+            color: rgba(255, 255, 255, 0.4);
+        }
+
+        .search-btn {
+            padding: 16px 30px;
+            background: linear-gradient(135deg, #00d4ff, #0099ff);
+            border: none;
+            border-radius: 8px;
+            color: #0f0c29;
+            font-weight: bold;
+            font-size: 14px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            letter-spacing: 2px;
+            text-transform: uppercase;
+        }
+
+        .search-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 30px rgba(0, 212, 255, 0.4);
+        }
+
+        .search-btn:active {
+            transform: translateY(0);
+        }
+
+        .search-btn.loading {
+            opacity: 0.7;
+            cursor: not-allowed;
+        }
+
+        /* ===== RESULTS ===== */
+        .results-container {
+            margin-top: 40px;
+            max-height: 600px;
+            overflow-y: auto;
+        }
+
+        .results-header {
+            font-size: 14px;
+            color: #00d4ff;
+            margin-bottom: 20px;
+            letter-spacing: 2px;
+            text-transform: uppercase;
+        }
+
+        /* Main Result */
+        .main-result {
+            background: rgba(0, 212, 255, 0.05);
+            border: 1px solid rgba(0, 212, 255, 0.3);
+            border-radius: 12px;
+            padding: 30px;
+            margin-bottom: 30px;
+            animation: slideIn 0.5s ease-out;
+        }
+
+        .main-result:hover {
+            background: rgba(0, 212, 255, 0.08);
+            border-color: #00d4ff;
+            box-shadow: 0 10px 40px rgba(0, 212, 255, 0.1);
+        }
+
+        .main-answer {
+            font-size: 28px;
+            font-weight: bold;
+            color: #00d4ff;
+            margin-bottom: 15px;
+            line-height: 1.4;
+            text-shadow: 0 0 10px rgba(0, 212, 255, 0.2);
+        }
+
+        .main-score {
+            display: inline-block;
+            background: rgba(0, 212, 255, 0.1);
+            color: #00d4ff;
+            padding: 6px 14px;
+            border-radius: 20px;
+            font-size: 13px;
+            font-weight: bold;
+            margin-bottom: 15px;
+            border: 1px solid rgba(0, 212, 255, 0.3);
+        }
+
+        .main-text {
+            color: #a0a0a0;
+            font-size: 14px;
+            line-height: 1.6;
+            opacity: 0.8;
+            word-break: break-word;
+        }
+
+        /* Suggestions */
+        .suggestions-header {
+            font-size: 12px;
+            color: rgba(0, 212, 255, 0.6);
+            margin-bottom: 15px;
+            letter-spacing: 2px;
+            text-transform: uppercase;
+            opacity: 0.7;
+        }
+
+        .suggestions-container {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .suggestion-item {
+            background: rgba(0, 212, 255, 0.02);
+            border: 1px solid rgba(0, 212, 255, 0.15);
+            border-radius: 8px;
+            padding: 15px;
+            transition: all 0.3s ease;
+            animation: slideIn 0.5s ease-out;
+        }
+
+        .suggestion-item:nth-child(1) {
+            animation-delay: 0.1s;
+        }
+
+        .suggestion-item:nth-child(2) {
+            animation-delay: 0.2s;
+        }
+
+        .suggestion-item:hover {
+            background: rgba(0, 212, 255, 0.05);
+            border-color: rgba(0, 212, 255, 0.3);
+            transform: translateX(5px);
+            box-shadow: 0 5px 15px rgba(0, 212, 255, 0.05);
+        }
+
+        .suggestion-score {
+            display: inline-block;
+            background: rgba(0, 212, 255, 0.08);
+            color: #00d4ff;
+            padding: 3px 10px;
+            border-radius: 15px;
+            font-size: 11px;
+            font-weight: bold;
+            margin-bottom: 8px;
+            border: 1px solid rgba(0, 212, 255, 0.15);
+        }
+
+        .suggestion-text {
+            color: #c0c0c0;
+            font-size: 13px;
+            line-height: 1.5;
+            word-break: break-word;
+        }
+
+        @keyframes slideIn {
+            from {
+                opacity: 0;
+                transform: translateX(-20px);
+            }
+            to {
+                opacity: 1;
+                transform: translateX(0);
+            }
+        }
+
+        .error-message {
+            background: rgba(255, 100, 100, 0.05);
+            border: 1px solid rgba(255, 100, 100, 0.2);
+            color: #ff8080;
+            padding: 14px;
+            border-radius: 6px;
+            margin-top: 18px;
+            font-size: 13px;
+        }
+
+        .loading-spinner {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 3px solid rgba(0, 212, 255, 0.2);
+            border-top: 3px solid #00d4ff;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin-right: 10px;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        .no-results {
+            text-align: center;
+            color: rgba(0, 212, 255, 0.6);
+            padding: 40px 20px;
+            font-size: 14px;
+        }
+
+        /* ===== SCROLLBAR ===== */
+        .results-container::-webkit-scrollbar {
+            width: 8px;
+        }
+
+        .results-container::-webkit-scrollbar-track {
+            background: rgba(0, 212, 255, 0.05);
+        }
+
+        .results-container::-webkit-scrollbar-thumb {
+            background: rgba(0, 212, 255, 0.3);
+            border-radius: 4px;
+        }
+
+        .results-container::-webkit-scrollbar-thumb:hover {
+            background: rgba(0, 212, 255, 0.5);
+        }
+
+        /* ===== RESPONSIVE ===== */
+        @media (max-width: 600px) {
+            .title {
+                font-size: 32px;
+                letter-spacing: 4px;
+            }
+
+            .axis-logo {
+                font-size: 80px;
+                letter-spacing: 10px;
+            }
+
+            .search-input-wrapper {
+                flex-direction: column;
+            }
+
+            .search-btn {
+                width: 100%;
+            }
+        }
+    </style>
+</head>
+<body>
+    <!-- HAMBURGER MENU -->
+    <div class="hamburger-menu" id="hamburgerMenu">
+        <div class="menu-header">
+            <div class="menu-title">Menu</div>
+        </div>
+        <div class="menu-item" id="insertMenuItem">📝 Insert Data</div>
+        <div class="menu-item" id="dbSelectorMenuItem">🗄️ Select Database</div>
+    </div>
+
+    <!-- HAMBURGER TOGGLE -->
+    <div class="hamburger-toggle" id="hamburgerToggle">
+        <div class="hamburger-line"></div>
+        <div class="hamburger-line"></div>
+        <div class="hamburger-line"></div>
+    </div>
+
+    <!-- INSERT MODAL -->
+    <div class="modal" id="insertModal">
+        <div class="modal-content">
+            <div class="modal-header">Insert New Data</div>
+            <div class="form-group">
+                <label class="form-label">Text Content</label>
+                <textarea class="form-input form-textarea" id="insertText" placeholder="Enter the text to insert..."></textarea>
+            </div>
+            <div class="form-group">
+                <label class="form-label">Additional Metadata (JSON)</label>
+                <textarea class="form-input form-textarea" id="insertPayload" placeholder='{"key": "value"}'></textarea>
+            </div>
+            <div id="insertMessage"></div>
+            <div class="modal-buttons">
+                <button class="modal-btn submit" id="insertSubmitBtn">Insert</button>
+                <button class="modal-btn cancel" id="insertCancelBtn">Cancel</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- DATABASE SELECTOR MODAL -->
+    <div class="modal" id="dbModal">
+        <div class="modal-content">
+            <div class="modal-header">Select Database</div>
+            <div class="form-group">
+                <label class="form-label">Available Databases</label>
+                <select class="form-input" id="dbSelect">
+                    <option value="">Loading...</option>
+                </select>
+            </div>
+            <div id="dbMessage"></div>
+            <div class="modal-buttons">
+                <button class="modal-btn submit" id="dbLoadBtn">Load</button>
+                <button class="modal-btn cancel" id="dbCancelBtn">Cancel</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- SPLASH SCREEN -->
+    <div class="splash-screen">
+        <div class="logo-container">
+            <div class="glow-ring"></div>
+            <div class="glow-ring"></div>
+            <div class="axis-logo">aXis</div>
+        </div>
+    </div>
+
+    <!-- MAIN INTERFACE -->
+    <div class="main-interface">
+        <div class="container">
+            <!-- Header -->
+            <div class="header">
+                <h1 class="title">aXis</h1>
+                <p class="subtitle">VECTOR SEARCH ENGINE</p>
+            </div>
+
+            <!-- Search Box -->
+            <div class="search-container">
+                <div class="search-input-wrapper">
+                    <input 
+                        type="text" 
+                        class="search-input" 
+                        id="searchInput" 
+                        placeholder="Enter your query..."
+                        autocomplete="off"
+                    >
+                    <button class="search-btn" id="searchBtn">Search</button>
+                </div>
+            </div>
+
+            <!-- Results -->
+            <div class="results-container" id="resultsContainer"></div>
+        </div>
+    </div>
+
+    <script>
+        // ===== DOM Elements =====
+        const searchInput = document.getElementById('searchInput');
+        const searchBtn = document.getElementById('searchBtn');
+        const resultsContainer = document.getElementById('resultsContainer');
+        
+        // Hamburger Menu
+        const hamburgerToggle = document.getElementById('hamburgerToggle');
+        const hamburgerMenu = document.getElementById('hamburgerMenu');
+        const insertMenuItem = document.getElementById('insertMenuItem');
+        const dbSelectorMenuItem = document.getElementById('dbSelectorMenuItem');
+        
+        // Insert Modal
+        const insertModal = document.getElementById('insertModal');
+        const insertText = document.getElementById('insertText');
+        const insertPayload = document.getElementById('insertPayload');
+        const insertSubmitBtn = document.getElementById('insertSubmitBtn');
+        const insertCancelBtn = document.getElementById('insertCancelBtn');
+        const insertMessage = document.getElementById('insertMessage');
+        
+        // Database Modal
+        const dbModal = document.getElementById('dbModal');
+        const dbSelect = document.getElementById('dbSelect');
+        const dbLoadBtn = document.getElementById('dbLoadBtn');
+        const dbCancelBtn = document.getElementById('dbCancelBtn');
+        const dbMessage = document.getElementById('dbMessage');
+
+        // ===== Hamburger Menu Control =====
+        hamburgerToggle.addEventListener('click', () => {
+            hamburgerMenu.classList.toggle('open');
+        });
+
+        // Close menu when clicking outside
+        document.addEventListener('click', (e) => {
+            if (!hamburgerMenu.contains(e.target) && !hamburgerToggle.contains(e.target)) {
+                hamburgerMenu.classList.remove('open');
+            }
+        });
+
+        // ===== Insert Data Menu Item =====
+        insertMenuItem.addEventListener('click', () => {
+            hamburgerMenu.classList.remove('open');
+            insertModal.classList.add('open');
+            insertText.focus();
+        });
+
+        insertCancelBtn.addEventListener('click', () => {
+            insertModal.classList.remove('open');
+            clearInsertForm();
+        });
+
+        insertSubmitBtn.addEventListener('click', submitInsert);
+
+        // ===== Database Selector Menu Item =====
+        dbSelectorMenuItem.addEventListener('click', () => {
+            hamburgerMenu.classList.remove('open');
+            dbModal.classList.add('open');
+            loadAvailableDatabases();
+        });
+
+        dbCancelBtn.addEventListener('click', () => {
+            dbModal.classList.remove('open');
+        });
+
+        dbLoadBtn.addEventListener('click', loadSelectedDatabase);
+
+        // Focus input after splash screen
+        setTimeout(() => {
+            searchInput.focus();
+        }, 2000);
+
+        // Search on button click
+        searchBtn.addEventListener('click', performSearch);
+
+        // Search on Enter key
+        searchInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                performSearch();
+            }
+        });
+
+        // ===== SEARCH FUNCTION =====
+
+        async function performSearch() {
+            const query = searchInput.value.trim();
+            
+            if (!query) {
+                resultsContainer.innerHTML = '<div class="error-message">Please enter a search query</div>';
+                return;
+            }
+
+            // Show loading state
+            searchBtn.classList.add('loading');
+            searchBtn.disabled = true;
+            resultsContainer.innerHTML = '<div><span class="loading-spinner"></span>Searching...</div>';
+
+            try {
+                const response = await fetch('/api/search', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ query })
+                });
+
+                const data = await response.json();
+
+                if (!response.ok) {
+                    throw new Error(data.error || 'Search failed');
+                }
+
+                displayResults(data.results);
+            } catch (error) {
+                resultsContainer.innerHTML = `<div class="error-message">❌ Error: ${error.message}</div>`;
+            } finally {
+                searchBtn.classList.remove('loading');
+                searchBtn.disabled = false;
+            }
+        }
+
+        function displayResults(results) {
+            if (results.length === 0) {
+                resultsContainer.innerHTML = '<div class="no-results">No results found. Try a different query.</div>';
+                return;
+            }
+
+            let html = '';
+            
+            // Main result (first result)
+            if (results.length > 0) {
+                const mainResult = results[0];
+                html += `
+                    <div class="main-result">
+                        <div class="main-score">Score: ${mainResult.score}</div>
+                        <div class="main-answer">${escapeHtml(mainResult.answer || mainResult.text)}</div>
+                        ${mainResult.text ? `<div class="main-text">${escapeHtml(mainResult.text)}</div>` : ''}
+                    </div>
+                `;
+            }
+            
+            // Suggestions (next 2 results)
+            const suggestions = results.slice(1, 3);
+            if (suggestions.length > 0) {
+                html += `<div class="suggestions-header">💡 Suggestions</div>`;
+                html += `<div class="suggestions-container">`;
+                
+                suggestions.forEach((result) => {
+                    html += `
+                        <div class="suggestion-item">
+                            <div class="suggestion-score">Score: ${result.score}</div>
+                            <div class="suggestion-text">${escapeHtml(result.text)}</div>
+                        </div>
+                    `;
+                });
+                
+                html += `</div>`;
+            }
+
+            resultsContainer.innerHTML = html;
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        // ===== INSERT DATA FUNCTION =====
+        async function submitInsert() {
+            const text = insertText.value.trim();
+            
+            if (!text) {
+                showInsertMessage('❌ Text is required', true);
+                return;
+            }
+
+            let payload = {};
+            if (insertPayload.value.trim()) {
+                try {
+                    payload = JSON.parse(insertPayload.value);
+                } catch (e) {
+                    showInsertMessage('❌ Invalid JSON in payload', true);
+                    return;
+                }
+            }
+
+            insertSubmitBtn.disabled = true;
+            showInsertMessage('⏳ Inserting...', false);
+
+            try {
+                const response = await fetch('/api/insert', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ text, payload })
+                });
+
+                const data = await response.json();
+
+                if (!response.ok) {
+                    throw new Error(data.error || 'Insert failed');
+                }
+
+                showInsertMessage('✅ Data inserted successfully!', false);
+                setTimeout(() => {
+                    insertModal.classList.remove('open');
+                    clearInsertForm();
+                }, 1500);
+            } catch (error) {
+                showInsertMessage(`❌ Error: ${error.message}`, true);
+            } finally {
+                insertSubmitBtn.disabled = false;
+            }
+        }
+
+        function showInsertMessage(msg, isError) {
+            insertMessage.innerHTML = `<div class="error-message" style="color: ${isError ? '#ff6464' : '#4cff00'}; border-color: ${isError ? 'rgba(255, 100, 100, 0.5)' : 'rgba(76, 255, 0, 0.5)'}; background: ${isError ? 'rgba(255, 50, 50, 0.1)' : 'rgba(76, 255, 0, 0.1)'};">${msg}</div>`;
+        }
+
+        function clearInsertForm() {
+            insertText.value = '';
+            insertPayload.value = '';
+            insertMessage.innerHTML = '';
+            insertSubmitBtn.disabled = false;
+        }
+
+        // ===== DATABASE SELECTOR FUNCTION =====
+        async function loadAvailableDatabases() {
+            try {
+                const response = await fetch('/api/databases');
+                const data = await response.json();
+
+                dbSelect.innerHTML = '';
+                if (data.databases && data.databases.length > 0) {
+                    data.databases.forEach(db => {
+                        const option = document.createElement('option');
+                        option.value = db;
+                        option.textContent = db;
+                        if (db === data.current) {
+                            option.selected = true;
+                            option.textContent += ' (current)';
+                        }
+                        dbSelect.appendChild(option);
+                    });
+                } else {
+                    const option = document.createElement('option');
+                    option.textContent = 'No databases found';
+                    option.disabled = true;
+                    dbSelect.appendChild(option);
+                }
+                dbMessage.innerHTML = '';
+            } catch (error) {
+                dbMessage.innerHTML = `<div class="error-message">❌ Error loading databases: ${error.message}</div>`;
+            }
+        }
+
+        async function loadSelectedDatabase() {
+            const dbName = dbSelect.value;
+            
+            if (!dbName) {
+                dbMessage.innerHTML = '<div class="error-message">Please select a database</div>';
+                return;
+            }
+
+            dbLoadBtn.disabled = true;
+            dbMessage.innerHTML = '<div style="color: #00d4ff;">⏳ Loading...</div>';
+
+            try {
+                const response = await fetch('/api/load-database', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ database: dbName })
+                });
+
+                const data = await response.json();
+
+                if (!response.ok) {
+                    throw new Error(data.error || 'Load failed');
+                }
+
+                dbMessage.innerHTML = `<div class="error-message" style="color: #4cff00; border-color: rgba(76, 255, 0, 0.5); background: rgba(76, 255, 0, 0.1);">✅ Loaded ${dbName} (${data.vectors_loaded} vectors)</div>`;
+                setTimeout(() => {
+                    dbModal.classList.remove('open');
+                }, 1500);
+            } catch (error) {
+                dbMessage.innerHTML = `<div class="error-message">❌ Error: ${error.message}</div>`;
+            } finally {
+                dbLoadBtn.disabled = false;
+            }
+        }
+    </script>
+</body>
+</html>
