@@ -6,17 +6,15 @@ from typing import List, Dict, Any, Optional
 import os
 from datetime import datetime as dt
 
-import polars as pl
-import ijson
+import h5py
 
 from axis_python.functions.cosine_similarity import cosine_similarity
 
 logger = logging.getLogger(__name__)
 
 
-
 class VectorRegistry:
-    """Manages vector storage and retrieval for a collection."""
+    """Manages vector storage and retrieval for a collection using HDF5."""
 
     def __init__(self, path: str):
         self.path = path
@@ -24,94 +22,103 @@ class VectorRegistry:
         self.vectors: List[List[float]] = []
         self.created_datetime: List[dt] = []
         self.origin_datetime: Optional[dt] = None
+        self._payload_cache: Dict[int, Dict[str, Any]] = {}
 
     def lazy_load(self, collection: str = "main") -> None:
-        """Load only vectors from the specified collection, keeping payloads for lazy loading."""
+        """Load only vectors from the specified collection/group in HDF5, keeping payloads for lazy loading."""
         self.collection_name = collection
         if not os.path.exists(self.path):
             logger.info(f"Database file {self.path} does not exist yet, starting with empty data")
             return
 
         try:
-            with open(self.path, "rb") as f:
-                # Stream only vectors from target collection
-                vector_count = 0
-                for vector in ijson.items(f, f"{collection}.vectors.item"):
-                    self.vectors.append([float(v) for v in vector])
-                    vector_count += 1
-                
-                if vector_count == 0:
+            with h5py.File(self.path, 'r') as f:
+                group = f.get(collection)
+                if group is None:
                     logger.info(f"Collection '{collection}' not found or empty, starting with empty data")
                     return
                 
-                logger.info(f"Loaded {vector_count} vectors from {self.path}")
+                if 'vectors' in group:
+                    vectors_ds = group['vectors']
+                    self.vectors = [list(v) for v in vectors_ds[:]]  # Load as list of lists
+                    logger.info(f"Loaded {len(self.vectors)} vectors from {self.path}")
+                else:
+                    logger.info(f"No vectors found in collection '{collection}'")
             
         except Exception as e:
             logger.error(f"Failed to load {self.path}: {e}")
             raise
 
     def get_payload_at_index(self, payload_index: int) -> Dict[str, Any]:
-        """Efficiently retrieve a specific payload by index without loading all payloads."""
+        """Efficiently retrieve a specific payload by index from HDF5 without loading all."""
         if payload_index < 0 or payload_index >= len(self.vectors):
             raise IndexError(f"Payload index {payload_index} out of range")
         
+        if payload_index in self._payload_cache:
+            return self._payload_cache[payload_index]
+        
         try:
-            with open(self.path, "rb") as f:
-                for index, payload in enumerate(ijson.items(f, f"{self.collection_name}.payloads.item")):
-                    if index == payload_index:
-                        return payload
+            with h5py.File(self.path, 'r') as f:
+                group = f.get(self.collection_name)
+                if group is None or 'payloads' not in group:
+                    raise ValueError(f"Payloads not found in collection '{self.collection_name}'")
+                
+                payloads_ds = group['payloads']
+                if payload_index >= payloads_ds.shape[0]:
+                    raise IndexError(f"Payload at index {payload_index} not found")
+                
+                payload_str = payloads_ds[payload_index].decode('utf-8')
+                payload = json.loads(payload_str)
+                self._payload_cache[payload_index] = payload
+                return payload
             
-            raise IndexError(f"Payload at index {payload_index} not found")
         except Exception as e:
-            logger.error(f"Failed to retrieve payload at index {index}: {e}")
+            logger.error(f"Failed to retrieve payload at index {payload_index}: {e}")
             raise
 
-    def save(self) -> None:        
-        payloads_to_save = getattr(self, '_insertion_payloads', [])
-        
+    def save(self) -> None:
+        """Save vectors and payloads to HDF5 file."""
+        # Get insertions if any
+        insertions = getattr(self, '_insertion_vector', [])
+        self._insertion_vector = []  # Clear after getting
 
-        if payloads_to_save:
-            existing_payloads = []
-            try:
-                with open(self.path, "rb") as f:
-                    for payload in ijson.items(f, f"{self.collection_name}.payloads.item"):
-                        existing_payloads.append(payload)
-            except:
-                pass
-            
-            all_payloads = existing_payloads + payloads_to_save
-            self._insertion_payloads = [] 
-        else:
-            all_payloads = []
-            try:
-                with open(self.path, "rb") as f:
-                    for payload in ijson.items(f, f"{self.collection_name}.payloads.item"):
-                        all_payloads.append(payload)
-            except:
-                pass
-        
-        collection_data = {
-            "vectors": self.vectors,
-            "payloads": all_payloads,
-            "created_datetime": [d.isoformat() if isinstance(d, dt) else d for d in self.created_datetime],
-            "origin_datetime": self.origin_datetime.isoformat() if self.origin_datetime else None,
-        }
-        
-        data = {}
-        if os.path.exists(self.path):
-            try:
-                with open(self.path, "r") as f:
-                    data = json.load(f)
-            except Exception as e:
-                logger.warning(f"Could not read existing file, overwriting: {e}")
-        
-
-        data[self.collection_name] = collection_data
-        
         try:
-            with open(self.path, "w") as f:
-                json.dump(data, f, indent=2)
+            with h5py.File(self.path, 'a') as f:  # 'a' for append/create
+                group = f.require_group(self.collection_name)
+                
+                # Load existing payloads to append new ones
+                all_payloads = []
+                if 'payloads' in group:
+                    existing_payloads = group['payloads'][:]
+                    all_payloads = [json.loads(p.decode('utf-8')) for p in existing_payloads]
+                
+                # Append new insertions
+                all_payloads.extend(insertions)
+                
+                # Delete old datasets if they exist (to avoid conflicts)
+                if 'vectors' in group:
+                    del group['vectors']
+                if 'payloads' in group:
+                    del group['payloads']
+                
+                # Handle vectors: convert to numpy array
+                all_vectors = np.array(self.vectors, dtype=np.float32)
+                group.create_dataset('vectors', data=all_vectors, compression="gzip")
+                
+                # Handle payloads: serialize to JSON strings and store as byte strings
+                payload_strings = [json.dumps(p).encode('utf-8') for p in all_payloads]
+                # Store as variable-length string dataset
+                dt_string = h5py.string_dtype(encoding='utf-8')
+                group.create_dataset('payloads', data=payload_strings, dtype=dt_string, compression="gzip")
+                
+                # Save metadata as attributes
+                if self.created_datetime:
+                    group.attrs['created_datetime'] = [d.isoformat() for d in self.created_datetime]
+                if self.origin_datetime:
+                    group.attrs['origin_datetime'] = self.origin_datetime.isoformat()
+            
             logger.debug(f"Saved collection '{self.collection_name}' to {self.path}")
+        
         except Exception as e:
             logger.error(f"Failed to save {self.path}: {e}")
             raise
@@ -156,15 +163,10 @@ class aXisDB:
         
         self.vector_registry.vectors.append(vector)
         
-        # For insertion, we need to temporarily store payloads to save
-        if not hasattr(self.vector_registry, '_insertion_payloads'):
-            self.vector_registry._insertion_payloads = []
-        self.vector_registry._insertion_payloads.append(payload)
-        
-        self.vector_registry.created_datetime.append(dt.now())
-        
-        if self.vector_registry.origin_datetime is None:
-            self.vector_registry.origin_datetime = dt.now()
+        # Store insertion (payload only; vector already in self.vectors)
+        if not hasattr(self.vector_registry, '_insertion_vector'):
+            self.vector_registry._insertion_vector = []
+        self.vector_registry._insertion_vector.append(payload)
         
         self.vector_registry.save()
 

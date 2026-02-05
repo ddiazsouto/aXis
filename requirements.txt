@@ -2,3 +2,4 @@ qdrant-client
 sentence-transformers
 pandas
 ijson
+h5py
