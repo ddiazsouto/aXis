@@ -47,7 +47,9 @@ class TestVectorRegistryInitialization:
         
         assert registry.path == temp_db_path
         assert registry.collection_name == "main"
-        assert registry.vectors == []
+        assert isinstance(registry.vectors, np.ndarray)
+        assert len(registry.vectors) == 0
+        assert registry.vectors.shape == (0, 384)
         assert registry.created_datetime == []
         assert registry.origin_datetime is None
         assert registry._payload_cache == {}
@@ -66,7 +68,7 @@ class TestVectorRegistrySaveAndLoad:
     def test_save_creates_hdf5_file(self, temp_db_path, sample_vectors, sample_payloads):
         """Test that save() creates a valid HDF5 file."""
         registry = VectorRegistry(temp_db_path)
-        registry.vectors = sample_vectors
+        registry.vectors = np.array(sample_vectors, dtype=np.float32)
         registry._insertion_vector = sample_payloads
         
         registry.save()
@@ -82,7 +84,7 @@ class TestVectorRegistrySaveAndLoad:
     def test_save_correct_vector_count(self, temp_db_path, sample_vectors, sample_payloads):
         """Test that saved vectors match original count."""
         registry = VectorRegistry(temp_db_path)
-        registry.vectors = sample_vectors
+        registry.vectors = np.array(sample_vectors, dtype=np.float32)
         registry._insertion_vector = sample_payloads
         
         registry.save()
@@ -95,7 +97,7 @@ class TestVectorRegistrySaveAndLoad:
     def test_save_correct_payload_count(self, temp_db_path, sample_vectors, sample_payloads):
         """Test that saved payloads match original count."""
         registry = VectorRegistry(temp_db_path)
-        registry.vectors = sample_vectors
+        registry.vectors = np.array(sample_vectors, dtype=np.float32)
         registry._insertion_vector = sample_payloads
         
         registry.save()
@@ -108,7 +110,7 @@ class TestVectorRegistrySaveAndLoad:
         """Test that lazy_load correctly loads vectors."""
         # Create a file first
         registry = VectorRegistry(temp_db_path)
-        registry.vectors = sample_vectors
+        registry.vectors = np.array(sample_vectors, dtype=np.float32)
         registry._insertion_vector = sample_payloads
         registry.save()
         
@@ -124,13 +126,13 @@ class TestVectorRegistrySaveAndLoad:
         registry = VectorRegistry(temp_db_path)
         registry.lazy_load()
         
-        assert registry.vectors == []
+        assert len(registry.vectors) == 0
 
     def test_lazy_load_nonexistent_collection(self, temp_db_path, sample_vectors, sample_payloads):
         """Test lazy_load with nonexistent collection."""
         # Create a file with one collection
         registry = VectorRegistry(temp_db_path)
-        registry.vectors = sample_vectors
+        registry.vectors = np.array(sample_vectors, dtype=np.float32)
         registry._insertion_vector = sample_payloads
         registry.save()
         
@@ -138,7 +140,7 @@ class TestVectorRegistrySaveAndLoad:
         registry2 = VectorRegistry(temp_db_path)
         registry2.lazy_load("nonexistent_collection")
         
-        assert registry2.vectors == []
+        assert len(registry2.vectors) == 0
 
 
 class TestVectorRegistryPayloads:
@@ -147,7 +149,7 @@ class TestVectorRegistryPayloads:
     def test_get_payload_at_index(self, temp_db_path, sample_vectors, sample_payloads):
         """Test retrieving a specific payload by index."""
         registry = VectorRegistry(temp_db_path)
-        registry.vectors = sample_vectors
+        registry.vectors = np.array(sample_vectors, dtype=np.float32)
         registry._insertion_vector = sample_payloads
         registry.save()
         
@@ -161,7 +163,7 @@ class TestVectorRegistryPayloads:
     def test_get_payload_out_of_range(self, temp_db_path, sample_vectors, sample_payloads):
         """Test that out-of-range index raises IndexError."""
         registry = VectorRegistry(temp_db_path)
-        registry.vectors = sample_vectors
+        registry.vectors = np.array(sample_vectors, dtype=np.float32)
         registry._insertion_vector = sample_payloads
         registry.save()
         
@@ -174,7 +176,7 @@ class TestVectorRegistryPayloads:
     def test_get_payload_negative_index(self, temp_db_path, sample_vectors, sample_payloads):
         """Test that negative index raises IndexError."""
         registry = VectorRegistry(temp_db_path)
-        registry.vectors = sample_vectors
+        registry.vectors = np.array(sample_vectors, dtype=np.float32)
         registry._insertion_vector = sample_payloads
         registry.save()
         
@@ -187,7 +189,7 @@ class TestVectorRegistryPayloads:
     def test_payload_cache(self, temp_db_path, sample_vectors, sample_payloads):
         """Test that payloads are cached after first retrieval."""
         registry = VectorRegistry(temp_db_path)
-        registry.vectors = sample_vectors
+        registry.vectors = np.array(sample_vectors, dtype=np.float32)
         registry._insertion_vector = sample_payloads
         registry.save()
         
@@ -217,14 +219,14 @@ class TestVectorRegistryMultipleCollections:
         # Save collection 1
         registry1 = VectorRegistry(temp_db_path)
         registry1.collection_name = "collection1"
-        registry1.vectors = vectors1
+        registry1.vectors = np.array(vectors1, dtype=np.float32)
         registry1._insertion_vector = payloads1
         registry1.save()
         
         # Save collection 2
         registry2 = VectorRegistry(temp_db_path)
         registry2.collection_name = "collection2"
-        registry2.vectors = vectors2
+        registry2.vectors = np.array(vectors2, dtype=np.float32)
         registry2._insertion_vector = payloads2
         registry2.save()
         
@@ -244,13 +246,13 @@ class TestVectorRegistryMultipleCollections:
         
         # Save to collection1
         registry.collection_name = "collection1"
-        registry.vectors = [[0.1, 0.2]]
+        registry.vectors = np.array([[0.1, 0.2]], dtype=np.float32)
         registry._insertion_vector = [{"id": 1}]
         registry.save()
         
         # Switch to collection2
         registry.collection_name = "collection2"
-        registry.vectors = [[0.3, 0.4], [0.5, 0.6]]
+        registry.vectors = np.array([[0.3, 0.4], [0.5, 0.6]], dtype=np.float32)
         registry._insertion_vector = [{"id": 2}, {"id": 3}]
         registry.save()
         
@@ -283,7 +285,7 @@ class TestVectorRegistryDataTypes:
         payloads = [{"id": 1}, {"id": 2}]
         
         registry = VectorRegistry(temp_db_path)
-        registry.vectors = vectors
+        registry.vectors = np.array(vectors, dtype=np.float32)
         registry._insertion_vector = payloads
         registry.save()
         
@@ -296,7 +298,7 @@ class TestVectorRegistryDataTypes:
         vectors = [[0.1, 0.2]]
         
         registry = VectorRegistry(temp_db_path)
-        registry.vectors = vectors
+        registry.vectors = np.array(vectors, dtype=np.float32)
         registry._insertion_vector = payloads
         registry.save()
         
@@ -317,7 +319,7 @@ class TestVectorRegistryLargeDatasets:
         vector_dim = 384
         
         registry = VectorRegistry(temp_db_path)
-        registry.vectors = np.random.rand(n_vectors, vector_dim).tolist()
+        registry.vectors = np.random.rand(n_vectors, vector_dim).astype(np.float32)
         registry._insertion_vector = [{"id": i} for i in range(n_vectors)]
         registry.save()
         
@@ -331,7 +333,7 @@ class TestVectorRegistryLargeDatasets:
         large_text = "x" * 10000  # 10KB of text
         
         registry = VectorRegistry(temp_db_path)
-        registry.vectors = [[0.1, 0.2]]
+        registry.vectors = np.array([[0.1, 0.2]], dtype=np.float32)
         registry._insertion_vector = [{"id": 1, "large_content": large_text}]
         registry.save()
         

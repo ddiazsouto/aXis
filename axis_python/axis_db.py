@@ -19,7 +19,7 @@ class VectorRegistry:
     def __init__(self, path: str):
         self.path = path
         self.collection_name: str = "main"
-        self.vectors: List[List[float]] = []
+        self.vectors: np.ndarray = np.empty((0, 384), dtype=np.float32)  # Start with empty array
         self.created_datetime: List[dt] = []
         self.origin_datetime: Optional[dt] = None
         self._payload_cache: Dict[int, Dict[str, Any]] = {}
@@ -49,7 +49,7 @@ class VectorRegistry:
                     vectors_ds = group['vectors']
                     # Direct array access - contiguous storage means no decompression
                     # This is as fast as reading from a separate binary file
-                    self.vectors = [list(v) for v in vectors_ds[:]]
+                    self.vectors = vectors_ds[:].astype(np.float32)
                     logger.info(f"Loaded {len(self.vectors)} vectors from {self.path} (contiguous, no decompression)")
                 else:
                     logger.info(f"No vectors found in collection '{collection}'")
@@ -118,7 +118,11 @@ class VectorRegistry:
                 
                 # Handle vectors: CONTIGUOUS storage for fastest access (like a separate file)
                 # No compression on vectors - speed over size for this use case
-                all_vectors = np.array(self.vectors, dtype=np.float32)
+                # Convert to numpy array if needed (for compatibility with tests that append lists)
+                if isinstance(self.vectors, list):
+                    all_vectors = np.array(self.vectors, dtype=np.float32)
+                else:
+                    all_vectors = self.vectors.astype(np.float32) if self.vectors.dtype != np.float32 else self.vectors
                 group.create_dataset(
                     'vectors',
                     data=all_vectors,
@@ -185,10 +189,14 @@ class aXisDB:
 
     def insert(self, text: str, payload: Dict[str, Any]) -> None:
         """Embed text and store with payload."""
-        vector = self.embedder.encode(text).tolist()
+        vector = self.embedder.encode(text).astype(np.float32)
         payload["text"] = text
         
-        self.vector_registry.vectors.append(vector)
+        # Append vector to numpy array
+        if len(self.vector_registry.vectors) == 0:
+            self.vector_registry.vectors = vector.reshape(1, -1)
+        else:
+            self.vector_registry.vectors = np.vstack([self.vector_registry.vectors, vector])
         
         # Store insertion (payload only; vector already in self.vectors)
         if not hasattr(self.vector_registry, '_insertion_vector'):
@@ -199,14 +207,15 @@ class aXisDB:
 
     def search(self, query: str, top_k: int = 3) -> List[Dict[str, Any]]:
         """Semantic search using cosine similarity, retrieving payloads on-demand."""
-        if not self.vector_registry.vectors:
+        if len(self.vector_registry.vectors) == 0:
             return []
         
-        q_vec = self.embedder.encode(query)
-        scores = [
-            cosine_similarity(q_vec, np.array(v))
+        q_vec = self.embedder.encode(query).astype(np.float32)
+        # Vectorized cosine similarity: compute scores for all vectors at once
+        scores = np.array([
+            cosine_similarity(q_vec, v)
             for v in self.vector_registry.vectors
-        ]
+        ])
         top_idx = np.argsort(scores)[-top_k:][::-1]
         
         results = []

@@ -339,3 +339,25 @@ class TestAxisDBErrorHandling:
         # Should handle gracefully
         results = axis_db.search("", top_k=1)
         assert isinstance(results, list)
+    def test_vectors_stored_as_numpy_array(self, axis_db):
+        """Test that vectors are stored as numpy arrays, not lists."""
+        axis_db.insert("Test document", {"id": 1})
+        
+        # Verify vectors is a numpy array
+        assert isinstance(axis_db.vector_registry.vectors, np.ndarray)
+        assert axis_db.vector_registry.vectors.dtype == np.float32
+        assert axis_db.vector_registry.vectors.ndim == 2
+        assert axis_db.vector_registry.vectors.shape[0] == 1
+        assert axis_db.vector_registry.vectors.shape[1] == 384
+
+    def test_multiple_inserts_stack_correctly(self, axis_db):
+        """Test that multiple inserts create properly stacked numpy array."""
+        for i in range(3):
+            axis_db.embedder.encode = Mock(return_value=np.ones(384) * i)
+            axis_db.insert(f"Doc {i}", {"id": i})
+        
+        # Verify stacking worked correctly
+        assert isinstance(axis_db.vector_registry.vectors, np.ndarray)
+        assert axis_db.vector_registry.vectors.shape == (3, 384)
+        # Check that different vectors are actually different
+        assert not np.allclose(axis_db.vector_registry.vectors[0], axis_db.vector_registry.vectors[1])
