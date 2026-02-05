@@ -55,8 +55,8 @@
             top: 0;
             width: 280px;
             height: 100vh;
-            background: rgba(0, 0, 0, 0.95);
-            border-right: 1px solid rgba(0, 212, 255, 0.2);
+            background: rgba(10, 10, 15, 0.98);
+            border-right: 1px solid rgba(0, 212, 255, 0.35);
             transform: translateX(-100%);
             transition: transform 0.3s ease;
             z-index: 900;
@@ -70,7 +70,7 @@
 
         .menu-header {
             padding: 20px;
-            border-bottom: 1px solid rgba(0, 212, 255, 0.15);
+            border-bottom: 1px solid rgba(0, 212, 255, 0.25);
             margin-bottom: 20px;
         }
 
@@ -83,14 +83,14 @@
 
         .menu-item {
             padding: 15px 20px;
-            color: #e0e0e0;
+            color: #d0d0d0;
             cursor: pointer;
             transition: all 0.3s ease;
             border-left: 2px solid transparent;
         }
 
         .menu-item:hover {
-            background: rgba(0, 212, 255, 0.08);
+            background: rgba(0, 212, 255, 0.12);
             border-left-color: #00d4ff;
             color: #00d4ff;
         }
@@ -418,8 +418,8 @@
         .search-input {
             flex: 1;
             padding: 16px 20px;
-            background: rgba(255, 255, 255, 0.03);
-            border: 1px solid rgba(0, 212, 255, 0.2);
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(0, 212, 255, 0.3);
             border-radius: 8px;
             color: #fff;
             font-family: 'Courier New', monospace;
@@ -430,7 +430,7 @@
 
         .search-input:focus {
             border-color: #00d4ff;
-            background: rgba(0, 212, 255, 0.02);
+            background: rgba(0, 212, 255, 0.05);
             box-shadow: 0 0 15px rgba(0, 212, 255, 0.15);
         }
 
@@ -440,11 +440,11 @@
 
         .search-btn {
             padding: 16px 30px;
-            background: linear-gradient(135deg, #00d4ff, #0099ff);
-            border: none;
+            background: rgba(0, 212, 255, 0.15);
+            border: 1px solid rgba(0, 212, 255, 0.35);
             border-radius: 8px;
-            color: #0f0c29;
-            font-weight: bold;
+            color: #00d4ff;
+            font-weight: 600;
             font-size: 14px;
             cursor: pointer;
             transition: all 0.3s ease;
@@ -454,7 +454,8 @@
 
         .search-btn:hover {
             transform: translateY(-2px);
-            box-shadow: 0 10px 30px rgba(0, 212, 255, 0.4);
+            box-shadow: 0 0 20px rgba(0, 212, 255, 0.2);
+            background: rgba(0, 212, 255, 0.2);
         }
 
         .search-btn:active {
@@ -488,8 +489,8 @@
 
         /* Main Result */
         .main-result {
-            background: rgba(0, 212, 255, 0.03);
-            border: 1px solid rgba(0, 212, 255, 0.15);
+            background: rgba(0, 212, 255, 0.06);
+            border: 1px solid rgba(0, 212, 255, 0.25);
             border-radius: 16px;
             padding: 40px;
             margin-bottom: 40px;
@@ -498,8 +499,8 @@
         }
 
         .main-result:hover {
-            background: rgba(0, 212, 255, 0.05);
-            border-color: rgba(0, 212, 255, 0.25);
+            background: rgba(0, 212, 255, 0.09);
+            border-color: rgba(0, 212, 255, 0.35);
         }
 
         .main-answer {
@@ -538,8 +539,8 @@
         }
 
         .suggestion-item {
-            background: rgba(0, 212, 255, 0.02);
-            border: 1px solid rgba(0, 212, 255, 0.1);
+            background: rgba(0, 212, 255, 0.04);
+            border: 1px solid rgba(0, 212, 255, 0.18);
             border-radius: 12px;
             padding: 25px;
             transition: all 0.3s ease;
@@ -555,8 +556,8 @@
         }
 
         .suggestion-item:hover {
-            background: rgba(0, 212, 255, 0.06);
-            border-color: rgba(0, 212, 255, 0.2);
+            background: rgba(0, 212, 255, 0.08);
+            border-color: rgba(0, 212, 255, 0.28);
             transform: translateY(-2px);
             box-shadow: 0 8px 20px rgba(0, 212, 255, 0.06);
         }
