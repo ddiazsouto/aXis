@@ -4,6 +4,9 @@ import numpy as np
 from sentence_transformers import SentenceTransformer
 from typing import List, Dict, Any, Optional
 import os
+import polars as pl
+from datetime import datetime
+
 
 from axis_python.functions.cosine_similarity import cosine_similarity
 from axis_python.vector_registry import VectorRegistry
@@ -14,8 +17,8 @@ class aXisDB:
     """Vector database with semantic search capabilities."""
 
     def __init__(self, path: str = "main"):
-        if not path.endswith('.axis'):
-            path = f"{path}.axis"
+        if not path.endswith('.parquet'):
+            path = f"{path}.parquet"
         
         self.path = path
         model_path = os.path.join(os.path.dirname(__file__), 'models', 'all-MiniLM-L6-v2')
@@ -37,46 +40,73 @@ class aXisDB:
         Description:
             Embed text and store with payload.
         """
-        vector = self.embedder.encode(text).astype(np.float32)
+        vector = self.embedder.encode(
+            text,
+            batch_size=64,
+            show_progress_bar=False,
+            convert_to_numpy=True,
+            normalize_embeddings=True
+        ).astype(np.float32)
         payload["text"] = text
         
-        # Append vector to numpy array
         if len(self.vector_registry.vectors) == 0:
             self.vector_registry.vectors = vector.reshape(1, -1)
         else:
             self.vector_registry.vectors = np.vstack([self.vector_registry.vectors, vector])
         
-        # Store insertion (payload only; vector already in self.vectors)
-        if not hasattr(self.vector_registry, '_insertion_vector'):
-            self.vector_registry._insertion_vector = []
-        self.vector_registry._insertion_vector.append(payload)
+        self.vector_registry._insertion_matrix.append(payload)
         
         self.vector_registry.save()
+    
+    def insert_dataframe(
+        self, dataframe: pl.DataFrame,
+        vectorise_col: str,
+        payload_col: str
+    ) -> None:
+        """
+        Description:
+            Insert a Polars DataFrame with 'text', 'payload' and indexcolumns.
+        """
+        if vectorise_col not in dataframe.columns or payload_col not in dataframe.columns:
+            raise ValueError(f"DataFrame must contain '{vectorise_col}' and '{payload_col}' columns")
+        payload_df = dataframe.with_columns(
+            pl.col(vectorise_col)
+            .map_batches(
+                lambda texts: self.embedder.encode(
+                    texts,
+                    batch_size=64,
+                    show_progress_bar=False,
+                    convert_to_numpy=True,
+                    normalize_embeddings=True
+                ).astype(np.float32)
+            )
+            .alias("vector"),
+            pl.lit(datetime.now()).alias("timestamp")
+        )
+        renamed_df = payload_df.rename(
+            {payload_col: "payload", vectorise_col: "text"}
+        ).select(["payload", "vector", "timestamp"])
+        print("staging a dataframe with the following number of records", renamed_df.height)
+        self.vector_registry._insertion_matrix.append(renamed_df)
 
     def search(self, query: str, top_k: int = 3) -> List[Dict[str, Any]]:
         """
         Description:
             Semantic search using cosine similarity, retrieving payloads on-demand.
         """
-        if len(self.vector_registry.vectors) == 0:
-            return []
         
-        q_vec = self.embedder.encode(query).astype(np.float32)
-        scores = np.array([
-            cosine_similarity(q_vec, v)
-            for v in self.vector_registry.vectors
-        ])
-        top_idx = np.argsort(scores)[-top_k:][::-1]
+        query_norm = query.astype(np.float32)
         
-        results = []
-        for i in top_idx:
-            payload = self.vector_registry.get_payload_at_index(i)
-            result = {
-                "score": round(float(scores[i]), 4),
-                "text": payload.get("text", ""),
-            }
-            result.update({k: v for k, v in payload.items() if k != "text"})
-            results.append(result)
+        similarities = self.embeddings @ query_norm   # dot product
         
-        return results
+        top_k_indices = np.argpartition(similarities, -top_k)[-top_k:]
+        top_k_sorted_idx = top_k_indices[np.argsort(similarities[top_k_indices])[::-1]]
+        
+        top_similarities = similarities[top_k_sorted_idx]
+        top_original_indices = self.indices[top_k_sorted_idx]
 
+        payload_df = (
+            self.vectors
+            .filter(pl.col("index").is_in(top_original_indices.tolist()))
+            .collect()
+        )

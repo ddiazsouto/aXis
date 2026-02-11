@@ -1,137 +1,130 @@
 import json
 import logging
 import numpy as np
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any
 import os
-from datetime import datetime as dt
-
-import h5py
+import polars as pl
 
 
 logger = logging.getLogger(__name__)
 
 
 class VectorRegistry:
+    """
+    Simple vector registry that stores vectors and payloads in Parquet format.
+    Uses an index column for fast payload lookup.
+    """
 
-    def __init__(self, path: str):
+    def __init__(self, path: str, embedding_dim: int = 384):
         self.path = path
-        self.collection_name: str = "main"
-        self.vectors: np.ndarray = np.empty((0, 384), dtype=np.float32)  # Start with empty array
+        self.embedding_dim = embedding_dim
+        self.vectors: np.ndarray = np.empty((0, embedding_dim), dtype=np.float32)
+        self.payloads: List[Dict[str, Any]] = []
 
-    def lazy_load(self, collection: str = "main") -> None:
+        self._pending_inserts: List[pl.DataFrame] = []
+
+    @property
+    def _insertion_matrix(self) -> List[pl.DataFrame]:
+        """List of DataFrames waiting to be appended on save."""
+        return self._pending_inserts
+
+    @_insertion_matrix.setter
+    def _insertion_matrix(self, df: pl.DataFrame) -> None:
         """
-        Description:
-            Load vectors from HDF5 using optimized settings for fastest access.
-        
-        Args:
-            collection: str
-                Name of the collection to load (default: "main")
+        Add a single Polars DataFrame to the pending inserts.
+        Enforces the required schema.
         """
-        self.collection_name = collection
+        if not isinstance(df, pl.DataFrame):
+            raise TypeError("Only polars DataFrame objects can be added to _insertion_matrix")
+
+        expected_columns = {"payload", "index", "timestamp"}
+        if set(df.columns) != expected_columns:
+            raise ValueError(
+                f"DataFrame must have exactly these columns: {expected_columns}. "
+                f"Got: {set(df.columns)}"
+            )
+
+        # Optional: you can also check dtypes here if you want to be strict
+        # e.g. df.schema == {"payload": pl.Object, "index": pl.Int64, "timestamp": pl.Datetime}
+
+        self._pending_inserts.append(df)
+
+    def lazy_load(self) -> None:
+        """Load vectors and payloads from Parquet file."""
         if not os.path.exists(self.path):
-            logger.info(f"Database file {self.path} does not exist yet, starting with empty data")
+            logger.info(f"Database file {self.path} does not exist, starting with empty data")
             return
+        
+        try:                      
+            self.vectors = pl.scan_delta(self.path).select("vectors", "index")
+            self.payloads = pl.scan_delta(self.path).select("payload", "index")
 
-        try:
-            with h5py.File(self.path, 'r') as f:
-                group = f.get(collection)
-                if group is None:
-                    logger.info(f"Collection '{collection}' not found or empty, starting with empty data")
-                    return
-                
-                if 'vectors' in group:
-                    vectors_ds = group['vectors']
-                    self.vectors = vectors_ds[:].astype(np.float32)
-                    logger.info(f"Loaded {len(self.vectors)} vectors from {self.path} (contiguous, no decompression)")
-                else:
-                    logger.info(f"No vectors found in collection '{collection}'")
+            self.vectors_count = (
+                self.vectors
+                .select(pl.len())
+                .collect()
+                .item()                     # extracts the single scalar value
+            )
+            
+            logger.info(f"Loaded {self.vectors_count} vectors from {self.path}")
             
         except Exception as e:
             logger.error(f"Failed to load {self.path}: {e}")
             raise
 
-    def get_payload_at_index(self, payload_index: int) -> Dict[str, Any]:
+    def get_payload_at_index(self, index: int) -> Dict[str, Any]:
         """
-        Description:
-            Retrieve the payload after finding its vector index.
+        Retrieve the payload at a given index.
         
         Args:
-            payload_index: int
-                The index of the payload in the vectors array (same index as the vector).
-
-        Returns:
-            payload: Dict[str, Any]
-                The payload associated with the vector at the given index.
-        """
-        if payload_index < 0 or payload_index >= len(self.vectors):
-            raise IndexError(f"Payload index {payload_index} out of range")
-        
-        try:
-            with h5py.File(self.path, 'r') as f:
-                group = f.get(self.collection_name)
-                if group is None or 'payloads' not in group:
-                    raise ValueError(f"Payloads not found in collection '{self.collection_name}'")
-                
-                payloads_ds = group['payloads']
-                if payload_index >= payloads_ds.shape[0]:
-                    raise IndexError(f"Payload at index {payload_index} not found")
-                
-                payload_str = payloads_ds[payload_index].decode('utf-8')
-                payload = json.loads(payload_str)
-                return payload
+            index: int - The index of the payload
             
-        except Exception as e:
-            logger.error(f"Failed to retrieve payload at index {payload_index}: {e}")
-            raise
+        Returns:
+            Dict[str, Any] - The payload at the given index
+        """
+        if index < 0 or index >= len(self.payloads):
+            raise IndexError(f"Index {index} out of range [0, {len(self.payloads)})")
+        
+        return self.payloads[index]
+
+    def get_vector_at_index(self, index: int) -> np.ndarray:
+        """
+        Retrieve the vector at a given index.
+        
+        Args:
+            index: int - The index of the vector
+            
+        Returns:
+            np.ndarray - The vector at the given index
+        """
+        if index < 0 or index >= len(self.vectors):
+            raise IndexError(f"Index {index} out of range [0, {len(self.vectors)})")
+        
+        return self.vectors[index]
 
     def save(self) -> None:
-        """
-        Description:
-            Save vectors and payloads to HDF5 with optimized settings for vector speed.
-        """
-        insertions = getattr(self, '_insertion_vector', [])
-        self._insertion_vector = []  # Clear after getting
-
-        try:
-            with h5py.File(self.path, 'a') as f:  # 'a' for append/create
-                group = f.require_group(self.collection_name)
-                
-                # Load existing payloads to append new ones
-                all_payloads = []
-                if 'payloads' in group:
-                    existing_payloads = group['payloads'][:]
-                    all_payloads = [json.loads(p.decode('utf-8')) for p in existing_payloads]
-                
-                all_payloads.extend(insertions)
-                
-                if 'vectors' in group:
-                    del group['vectors']
-                if 'payloads' in group:
-                    del group['payloads']
-                
-                if isinstance(self.vectors, list):
-                    all_vectors = np.array(self.vectors, dtype=np.float32)
-                else:
-                    all_vectors = self.vectors.astype(np.float32) if self.vectors.dtype != np.float32 else self.vectors
-                group.create_dataset(
-                    'vectors',
-                    data=all_vectors,
-                    chunks=None,
-                    compression=None,
-                    shuffle=False
-                )
-                payload_strings = [json.dumps(p).encode('utf-8') for p in all_payloads]
-                dt_string = h5py.string_dtype(encoding='utf-8')
-                group.create_dataset(
-                    'payloads',
-                    data=payload_strings,
-                    dtype=dt_string,
-                    compression="gzip",
-                    compression_opts=4
-                )
-            
-            logger.debug(f"Saved collection '{self.collection_name}' to {self.path} (optimized for vector speed)")
+        """Save vectors and payloads to Parquet with index column."""
+        if len(self._insertion_matrix) == 0:
+            logger.warning("No vectors to save")
+            return
         
+        try:            
+ 
+            df = pl.concat(
+                self._insertion_matrix
+            )
+            df.write_delta(self.path, mode="append")
+            
+            logger.info(f"Saved {len(self._insertion_matrix)} vectors to {self.path}")
+            
         except Exception as e:
             logger.error(f"Failed to save {self.path}: {e}")
             raise
+
+    def __len__(self) -> int:
+        """Return the number of vectors in the registry."""
+        return len(self.vectors)
+
+    def __getitem__(self, index: int) -> tuple:
+        """Return (vector, payload) for the given index."""
+        return self.get_vector_at_index(index), self.get_payload_at_index(index)
