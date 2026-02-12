@@ -54,7 +54,9 @@ class aXisDB:
         else:
             self.vector_registry.vectors = np.vstack([self.vector_registry.vectors, vector])
         
-        self.vector_registry._insertion_matrix.append(payload)
+        self.vector_registry._insertion_matrix.append(
+            payload.with_row_index("index", offset=self.vector_registry.vectors_count)
+        )
         
         self.vector_registry.save()
     
@@ -87,20 +89,30 @@ class aXisDB:
             {payload_col: "payload", vectorise_col: "text"}
         ).select(["payload", "vector", "timestamp"])
         print("staging a dataframe with the following number of records", renamed_df.height)
-        self.vector_registry._insertion_matrix.append(renamed_df)
+        self.vector_registry._insertion_matrix.append(
+            renamed_df.with_row_index("index", offset=self.vector_registry.vectors_count)
+        )
 
     def search(self, query: str, top_k: int = 3) -> List[Dict[str, Any]]:
         """
         Description:
             Semantic search using cosine similarity, retrieving payloads on-demand.
         """
+        query_norm = self.embedder.encode(
+            query,
+            batch_size=64,
+            show_progress_bar=False,
+            convert_to_numpy=True,
+            normalize_embeddings=True
+        ).astype(np.float32)
+
+        return query_norm
         
-        query_norm = query.astype(np.float32)
-        
-        similarities = self.embeddings @ query_norm   # dot product
+        similarities = self.vector_registry.vectors @ query_norm   # dot product
         
         top_k_indices = np.argpartition(similarities, -top_k)[-top_k:]
         top_k_sorted_idx = top_k_indices[np.argsort(similarities[top_k_indices])[::-1]]
+        return top_k_sorted_idx
         
         top_similarities = similarities[top_k_sorted_idx]
         top_original_indices = self.indices[top_k_sorted_idx]

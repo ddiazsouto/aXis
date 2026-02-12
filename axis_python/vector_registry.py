@@ -43,10 +43,6 @@ class VectorRegistry:
                 f"DataFrame must have exactly these columns: {expected_columns}. "
                 f"Got: {set(df.columns)}"
             )
-
-        # Optional: you can also check dtypes here if you want to be strict
-        # e.g. df.schema == {"payload": pl.Object, "index": pl.Int64, "timestamp": pl.Datetime}
-
         self._pending_inserts.append(df)
 
     def lazy_load(self) -> None:
@@ -56,21 +52,23 @@ class VectorRegistry:
             return
         
         try:                      
-            self.vectors = pl.scan_delta(self.path).select("vectors", "index")
-            self.payloads = pl.scan_delta(self.path).select("payload", "index")
+            self.vectors = pl.scan_delta(self.path).select("vector",)
+            self.payloads = pl.scan_delta(self.path).select("payload")
 
-            self.vectors_count = (
-                self.vectors
-                .select(pl.len())
-                .collect()
-                .item()                     # extracts the single scalar value
-            )
-            
+            self.vectors_count = self.payloads.select(pl.len()).collect().item()
             logger.info(f"Loaded {self.vectors_count} vectors from {self.path}")
             
         except Exception as e:
             logger.error(f"Failed to load {self.path}: {e}")
             raise
+    
+    def registry_dot_product(self, normalised_vector: np.ndarray) -> np.ndarray:
+        """
+        Description:
+            Compute dot product between input vector and all vectors in the registry.
+            The vector input should be normalised    
+        """
+        return self.vectors @ normalised_vector
 
     def get_payload_at_index(self, index: int) -> Dict[str, Any]:
         """
@@ -125,6 +123,6 @@ class VectorRegistry:
         """Return the number of vectors in the registry."""
         return len(self.vectors)
 
-    def __getitem__(self, index: int) -> tuple:
-        """Return (vector, payload) for the given index."""
-        return self.get_vector_at_index(index), self.get_payload_at_index(index)
+    # def __getitem__(self, index: int) -> tuple:
+    #     """Return (vector, payload) for the given index."""
+    #     return self.get_vector_at_index(index), self.get_payload_at_index(index)
