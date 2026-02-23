@@ -30,7 +30,6 @@ def load_database(db_name):
     global current_db, current_db_path
     db_path = os.path.join(os.path.dirname(__file__), db_name)
     
-    # Security check: ensure path is within the app directory
     if not os.path.abspath(db_path).startswith(os.path.abspath(os.path.dirname(__file__))):
         raise ValueError("Invalid database path")
     
@@ -107,17 +106,15 @@ def search():
         
         if not query:
             return jsonify({"error": "Empty query"}), 400
-        
-        # Search the database
-        results = current_db.search(query, top_k=5)
-        
-        # Format results
+
+        results = current_db.search(query, show_embedded_text=True, top_k=5)
+
         formatted_results = []
-        for result in results:
+        for payload, text, index in results:
             formatted_results.append({
-                "score": result.get("score", 0),
-                "text": result.get("text", ""),
-                "answer": result.get("answer", ""),
+                "answer": payload,
+                "text": text,
+                "index": index
             })
         
         return jsonify({"results": formatted_results, "count": len(formatted_results)})
@@ -164,7 +161,7 @@ def insert():
             "status": "success",
             "message": "Data inserted successfully",
             "text": text,
-            "payload": payload
+            "payload": str(payload)
         })
     
     except Exception as e:
