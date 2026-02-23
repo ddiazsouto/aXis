@@ -8,7 +8,6 @@ import polars as pl
 from datetime import datetime
 
 
-from axis_python.functions.cosine_similarity import cosine_similarity
 from axis_python.vector_registry import VectorRegistry
 
 
@@ -17,9 +16,6 @@ class aXisDB:
     """Vector database with semantic search capabilities."""
 
     def __init__(self, path: str = "main"):
-        if not path.endswith('.parquet'):
-            path = f"{path}.parquet"
-        
         self.path = path
         model_path = os.path.join(os.path.dirname(__file__), 'models', 'all-MiniLM-L6-v2')
         self.embedder = SentenceTransformer(model_path, local_files_only=True)
@@ -47,21 +43,24 @@ class aXisDB:
             convert_to_numpy=True,
             normalize_embeddings=True
         ).astype(np.float32)
-        payload["text"] = text
+        payload = str(payload)
         
-        if len(self.vector_registry.vectors) == 0:
-            self.vector_registry.vectors = vector.reshape(1, -1)
-        else:
-            self.vector_registry.vectors = np.vstack([self.vector_registry.vectors, vector])
+        df = pl.DataFrame({
+            "payload": [payload],
+            "text": [text],
+            "vector": [vector],
+            "timestamp": [datetime.now()]
+        })
         
-        self.vector_registry._insertion_matrix.append(
-            payload.with_row_index("index", offset=self.vector_registry.vectors_count)
+        self.vector_registry.insertion_matrix.append(
+            df.with_row_index("index", offset=self.vector_registry.vectors_count)
         )
-        
-        self.vector_registry.save()
+        self.logger.info(f"Inserted new record with text: '{text}' and payload: {payload} and index: {self.vector_registry.vectors_count}")
+
     
     def insert_dataframe(
-        self, dataframe: pl.DataFrame,
+        self,
+        dataframe: pl.DataFrame,
         vectorise_col: str,
         payload_col: str
     ) -> None:
@@ -80,20 +79,24 @@ class aXisDB:
                     show_progress_bar=False,
                     convert_to_numpy=True,
                     normalize_embeddings=True
-                ).astype(np.float32)
-            )
-            .alias("vector"),
+                )
+            ).alias("vector"),
             pl.lit(datetime.now()).alias("timestamp")
         )
         renamed_df = payload_df.rename(
             {payload_col: "payload", vectorise_col: "text"}
-        ).select(["payload", "vector", "timestamp"])
+        ).select(["payload", "vector", "text", "timestamp"])
         print("staging a dataframe with the following number of records", renamed_df.height)
-        self.vector_registry._insertion_matrix.append(
+        self.vector_registry.insertion_matrix.append(
             renamed_df.with_row_index("index", offset=self.vector_registry.vectors_count)
         )
 
-    def search(self, query: str, top_k: int = 3) -> List[Dict[str, Any]]:
+    def search(
+        self,
+        query: str,
+        show_embedded_text: bool = False,
+        top_k: int = 3
+    ) -> List[Dict[str, Any]]:
         """
         Description:
             Semantic search using cosine similarity, retrieving payloads on-demand.
@@ -105,20 +108,26 @@ class aXisDB:
             convert_to_numpy=True,
             normalize_embeddings=True
         ).astype(np.float32)
-
-        return query_norm
         
-        similarities = self.vector_registry.vectors @ query_norm   # dot product
+        tvector = self.vector_registry.vectors.collect() if hasattr(self.vector_registry.vectors, 'collect') else self.vector_registry.vectors
+
+        vectors_matrix = np.vstack(
+            tvector["vector"].to_list()
+        )
+        similarities = vectors_matrix @ query_norm
         
         top_k_indices = np.argpartition(similarities, -top_k)[-top_k:]
         top_k_sorted_idx = top_k_indices[np.argsort(similarities[top_k_indices])[::-1]]
-        return top_k_sorted_idx
         
-        top_similarities = similarities[top_k_sorted_idx]
-        top_original_indices = self.indices[top_k_sorted_idx]
-
-        payload_df = (
-            self.vectors
-            .filter(pl.col("index").is_in(top_original_indices.tolist()))
-            .collect()
-        )
+        original_indices = tvector["index"].to_numpy()[top_k_sorted_idx]
+        top_matches_dataframe = [
+            (self.vector_registry.get_payload_at_index(i), top_k_indices)
+            for i in original_indices.tolist()
+        ]
+        
+        return [
+            (dataframe[0]["payload"][0],
+             dataframe[0]["text"][0] if show_embedded_text else None,
+             dataframe[0]["index"][0])
+            for dataframe in top_matches_dataframe
+        ]
