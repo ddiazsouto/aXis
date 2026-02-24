@@ -1,7 +1,6 @@
 import json
 import logging
 import numpy as np
-from sentence_transformers import SentenceTransformer
 from typing import List, Dict, Any, Optional
 import os
 import polars as pl
@@ -9,7 +8,7 @@ from datetime import datetime
 
 
 from axis_python.vector_registry import VectorRegistry
-
+from axis_python.transformers import BertModel
 
 
 class aXisDB:
@@ -18,7 +17,7 @@ class aXisDB:
     def __init__(self, path: str = "main"):
         self.path = path
         model_path = os.path.join(os.path.dirname(__file__), 'models', 'all-MiniLM-L6-v2')
-        self.embedder = SentenceTransformer(model_path, local_files_only=True)
+        self.embedder = BertModel(model_path)
         self._vector_registry: Optional[VectorRegistry] = None
         self.logger = logging.getLogger(__name__)
         self.logger.info(f"aXisDB initialized with database: {self.path}")
