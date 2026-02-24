@@ -1,4 +1,4 @@
-qdrant-client
+safetensors
 sentence-transformers
 polars
 flask
