@@ -17,10 +17,9 @@ class Embeddings(nn.Module):
     Construct the embeddings from word, position and token_type embeddings.
     """
     
-    def __init__(self, model_name):
+    def __init__(self, model_path: Path):
         super().__init__()
-        relative_models_path = Path(__file__).parent.parent.joinpath('models')
-        with open(relative_models_path.joinpath(f'{model_name}/config.json'), 'r') as f:
+        with open(model_path.joinpath(f'config.json'), 'r') as f:
             config = json.load(f)
         for key, value in config.items():
             setattr(self, key, value)

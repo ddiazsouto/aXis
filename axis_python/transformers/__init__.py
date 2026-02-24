@@ -5,7 +5,7 @@ from .attention import BertAttention, BertSelfAttention, BertSelfOutput, MultiHe
 from .feedforward import FeedForward
 from .encoder_layer import EncoderLayer, BertIntermediate, BertOutput
 from .bert_encoder import BertEncoder
-from .model import MyMiniLM
+from .model import BertModel
 
 __all__ = [
     "Embeddings",
@@ -18,5 +18,5 @@ __all__ = [
     "BertIntermediate",
     "BertOutput",
     "BertEncoder",
-    "MyMiniLM"
+    "BertModel"
 ]
