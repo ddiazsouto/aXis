@@ -150,18 +150,19 @@ def insert():
         
         data = request.json
         text = data.get("text", "").strip()
-        payload = data.get("payload", {})
+        payload = data.get("payload", "")
         
         if not text:
             return jsonify({"error": "Text is required"}), 400
         
         current_db.insert(text, payload)
+        current_db.vector_registry.save()
         
         return jsonify({
             "status": "success",
             "message": "Data inserted successfully",
             "text": text,
-            "payload": str(payload)
+            "payload": payload
         })
     
     except Exception as e:
