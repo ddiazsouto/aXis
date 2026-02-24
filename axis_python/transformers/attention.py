@@ -9,87 +9,87 @@ import torch.nn.functional as F
 import math
 
 
-class MultiHeadAttention(nn.Module):
+class BertSelfAttention(nn.Module):
     """
-    Description:
-        Multi-head self-attention layer for BERT-like transformers.
-    
-    Args:
-        config: Configuration object with attributes:
-            - hidden_size: Dimension of hidden states (default: 384 for all-MiniLM-L6-v2)
-            - num_attention_heads: Number of attention heads (default: 12)
-            - attention_probs_dropout_prob: Dropout probability for attention weights
+    Multi-head self-attention mechanism (Q, K, V projections and attention computation).
+    This matches BERT's 'attention.self' submodule.
     """
     
     def __init__(self, config):
         super().__init__()
-        self.hidden_size = config.hidden_size
         self.num_attention_heads = config.num_attention_heads
-        self.attention_probs_dropout_prob = config.attention_probs_dropout_prob
+        self.attention_head_size = config.hidden_size // config.num_attention_heads
+        self.all_head_size = config.hidden_size
         
-        # Calculate head size
-        self.head_size = self.hidden_size // self.num_attention_heads
-        assert self.hidden_size % self.num_attention_heads == 0, \
-            f"hidden_size ({self.hidden_size}) must be divisible by num_attention_heads ({self.num_attention_heads})"
+        self.query = nn.Linear(config.hidden_size, self.all_head_size)
+        self.key = nn.Linear(config.hidden_size, self.all_head_size)
+        self.value = nn.Linear(config.hidden_size, self.all_head_size)
         
-        # Linear projections for Q, K, V
-        self.query = nn.Linear(self.hidden_size, self.hidden_size)
-        self.key = nn.Linear(self.hidden_size, self.hidden_size)
-        self.value = nn.Linear(self.hidden_size, self.hidden_size)
-        
-        # Output projection
-        self.dense = nn.Linear(self.hidden_size, self.hidden_size)
-        
-        # Dropout
-        self.dropout = nn.Dropout(self.attention_probs_dropout_prob)
+        self.dropout = nn.Dropout(config.attention_probs_dropout_prob)
+    
+    def transpose_for_scores(self, x):
+        new_x_shape = x.size()[:-1] + (self.num_attention_heads, self.attention_head_size)
+        x = x.view(new_x_shape)
+        return x.permute(0, 2, 1, 3)
     
     def forward(self, hidden_states, attention_mask=None):
-        """
-        Apply multi-head self-attention.
+        q = self.transpose_for_scores(self.query(hidden_states))
+        k = self.transpose_for_scores(self.key(hidden_states))
+        v = self.transpose_for_scores(self.value(hidden_states))
         
-        Args:
-            hidden_states: [batch_size, seq_length, hidden_size]
-            attention_mask: [batch_size, 1, 1, seq_length] (optional)
-                           Values of 1 for tokens to attend to, 0 for tokens to mask
+        scores = torch.matmul(q, k.transpose(-1, -2)) / math.sqrt(self.attention_head_size)
         
-        Returns:
-            output: [batch_size, seq_length, hidden_size]
-        """
-        batch_size, seq_length, _ = hidden_states.shape
-        
-        # Project to Q, K, V
-        q = self.query(hidden_states)  # [batch, seq, hidden]
-        k = self.key(hidden_states)    # [batch, seq, hidden]
-        v = self.value(hidden_states)  # [batch, seq, hidden]
-
-        q = q.view(batch_size, seq_length, self.num_attention_heads, self.head_size).transpose(1, 2)
-        k = k.view(batch_size, seq_length, self.num_attention_heads, self.head_size).transpose(1, 2)
-        v = v.view(batch_size, seq_length, self.num_attention_heads, self.head_size).transpose(1, 2)
-        
-        # Compute attention scores: Q @ K^T / sqrt(head_size)
-        scores = torch.matmul(q, k.transpose(-2, -1)) / math.sqrt(self.head_size)
-        # scores shape: [batch, heads, seq, seq]
-        
-        # Apply attention mask if provided
+        # attention_mask is already an additive bias: 0.0 for real tokens, -1e9 for padding.
+        # Simply add it directly to the logits before softmax.
         if attention_mask is not None:
-            # attention_mask: [batch, 1, 1, seq]
-            # Convert: where mask==0, set scores to -1e9
-            scores = scores + (attention_mask == 0).float() * -1e9
+            scores = scores + attention_mask
         
-        # Apply softmax to get attention weights
-        attention_weights = F.softmax(scores, dim=-1)
+        attention_probs = F.softmax(scores, dim=-1)
+        attention_probs = self.dropout(attention_probs)
         
-        # Apply dropout
-        attention_weights = self.dropout(attention_weights)
+        context = torch.matmul(attention_probs, v)
+        context = context.permute(0, 2, 1, 3).contiguous()
+        new_context_shape = context.size()[:-2] + (self.all_head_size,)
+        context = context.view(new_context_shape)
         
-        # Apply attention to values
-        context = torch.matmul(attention_weights, v)  # [batch, heads, seq, head_size]
-        
-        # Reshape back: [batch, heads, seq, head_size] -> [batch, seq, heads, head_size] -> [batch, seq, hidden]
-        context = context.transpose(1, 2).contiguous()
-        context = context.view(batch_size, seq_length, self.hidden_size)
-        
-        # Final output projection
-        output = self.dense(context)
-        
-        return output
+        return context
+
+
+class BertSelfOutput(nn.Module):
+    """
+    Output projection and layer normalization for self-attention.
+    This matches BERT's 'attention.output' submodule.
+    """
+    
+    def __init__(self, config):
+        super().__init__()
+        self.dense = nn.Linear(config.hidden_size, config.hidden_size)
+        self.LayerNorm = nn.LayerNorm(config.hidden_size, eps=config.layer_norm_eps)
+        self.dropout = nn.Dropout(config.hidden_dropout_prob)
+    
+    def forward(self, hidden_states, input_tensor):
+        hidden_states = self.dense(hidden_states)
+        hidden_states = self.dropout(hidden_states)
+        hidden_states = self.LayerNorm(hidden_states + input_tensor)
+        return hidden_states
+
+
+class BertAttention(nn.Module):
+    """
+    Complete attention module combining self-attention and output projection.
+    This matches BERT's 'attention' structure with 'self' and 'output' submodules.
+    """
+    
+    def __init__(self, config):
+        super().__init__()
+        self.self = BertSelfAttention(config)
+        self.output = BertSelfOutput(config)
+    
+    def forward(self, hidden_states, attention_mask=None):
+        self_output = self.self(hidden_states, attention_mask)
+        attention_output = self.output(self_output, hidden_states)
+        return attention_output
+
+
+# Keep backward compatibility
+MultiHeadAttention = BertAttention
