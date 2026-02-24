@@ -1,11 +1,10 @@
-import json
 import logging
 import numpy as np
 from typing import List, Dict, Any, Optional
 import os
 import polars as pl
 from datetime import datetime
-
+from pathlib import Path
 
 from axis_python.vector_registry import VectorRegistry
 from axis_python.transformers import BertModel
@@ -15,8 +14,8 @@ class aXisDB:
     """Vector database with semantic search capabilities."""
 
     def __init__(self, path: str = "main"):
-        self.path = path
-        model_path = os.path.join(os.path.dirname(__file__), 'models', 'all-MiniLM-L6-v2')
+        self.path = Path(path if path.endswith(".axis") else f"{path}.axis")
+        model_path = Path(__file__).parent / 'models' / 'all-MiniLM-L6-v2'
         self.embedder = BertModel(model_path)
         self._vector_registry: Optional[VectorRegistry] = None
         self.logger = logging.getLogger(__name__)
