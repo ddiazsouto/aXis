@@ -1,6 +1,7 @@
 from pathlib import Path
 from typing import List, Union
 
+import json
 import numpy as np
 import torch
 import torch.nn as nn
@@ -24,14 +25,41 @@ class BertModel(nn.Module):
         model_path: Path to the model directory inside axis_python/models/  (e.g. 'all-MiniLM-L6-v2')
     """
 
-    def __init__(self, model_path: Path):
+    def __init__(self, model_path: Path, load_weights: bool = True):
         super().__init__()
+        model_path = Path(model_path)
         self.embeddings = Embeddings(model_path)
         self.encoder    = BertEncoder(self.embeddings)
         self.pooler     = BertPooler(self.embeddings.hidden_size)
         self.model_path = model_path
+        self.tokenizer  = BertTokenizer(model_path)
 
-        self.tokenizer = BertTokenizer(model_path)
+        if load_weights:
+            weights_dir = model_path / 'weights'
+            if not weights_dir.exists():
+                raise FileNotFoundError(f"No weights directory found at {weights_dir}")
+            raw: dict = {}
+            for shard_path in sorted(weights_dir.glob("weights_*.json")):
+                with open(shard_path) as f:
+                    raw.update(json.load(f))
+
+            chunks: dict = {}
+            state_dict: dict = {}
+            for k, v in raw.items():
+                if "__chunk_" in k:
+                    base, _ = k.rsplit("__chunk_", 1)
+                    chunks.setdefault(base, []).append((k, v))
+                else:
+                    state_dict[k] = torch.tensor(v)
+
+            for base, parts in chunks.items():
+                parts.sort(key=lambda x: int(x[0].rsplit("__chunk_", 1)[1]))
+                rows = []
+                for _, v in parts:
+                    rows.extend(v)
+                state_dict[base] = torch.tensor(rows)
+
+            self.load_state_dict(state_dict, strict=False)
 
     def forward(
         self,
