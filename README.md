@@ -30,7 +30,7 @@ The server will start on `http://localhost:5005`
 from axis_python.axis_db import aXisDB
 
 db = aXisDB("main.axis")
-db.insert("What is the capital of France?", {"answer": "Paris"})
+db.insert("What is the capital of France?", "Paris")
 db.vector_registry.save()
 ```
 
