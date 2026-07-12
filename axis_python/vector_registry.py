@@ -128,8 +128,9 @@ class VectorRegistry:
             )
             df.write_delta(self.path, mode="append")
             self.clearinsertion_matrix()
+            self.lazy_load()
             
-            logger.info(f"Saved {len(self.insertion_matrix)} vectors to {self.path}")
+            logger.info(f"Saved {self.vectors_count} vectors to {self.path}")
             
         except Exception as e:
             logger.error(f"Failed to save {self.path}: {e}")
