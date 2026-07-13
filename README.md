@@ -1,6 +1,8 @@
 # aXis Vector Database
 
-A lightweight, fast vector database with semantic search capabilities built on Polars and Delta Lake.
+A lightweight, fast vector database with semantic search capabilities built on Polars and Delta Lake. Some vector databases solve scale problems while here we just want to allow the user for a quick way to access the information and for RAG systems to have a simple interface to interact with.
+
+It supports MCP servers to query via REST API
 
 ## What is aXis?
 
@@ -8,13 +10,13 @@ aXis is a simple vector database that enables semantic search over text data. It
 
 ## Quick Start
 
-### Installation
+You can use the default main.axis data, which has been loaded from under the data folder, using the general knowledge dataset
 
 ```bash
 pip install -r requirements.txt
 ```
 
-### Running the Server
+### Run the Server
 
 ```bash
 python axis_webapp.py
@@ -22,9 +24,11 @@ python axis_webapp.py
 
 The server will start on `http://localhost:5005`
 
-### Basic Usage
 
-#### Insert Data
+## How to load more data ans programatic usage
+
+
+### Insert Data ad-hoc
 
 ```python
 from axis_python.axis_db import aXisDB
@@ -34,7 +38,27 @@ db.insert("What is the capital of France?", "Paris")
 db.vector_registry.save()
 ```
 
-#### Search
+### Loading a whole dataframe at once
+
+This is the example of how we generated main.axis
+
+```python
+from axis_python.axis_db import aXisDB
+import polars as pl
+
+
+df = pl.read_csv("./data/general_knowledge.csv")
+
+db = aXisDB("main")
+db.insert_dataframe(
+    dataframe=df,
+    vectorise_col="text",
+    payload_col="payload"
+)
+db.vector_registry.save()
+```
+
+### Search
 
 ```python
 results = db.search("French capital city", top_k=3)
@@ -83,13 +107,9 @@ GET /api/status
 - **REST API** for easy integration
 - **Local embeddings** (no external API calls)
 
-## Architecture
+## Potential Improvements
 
-- `axis_db.py` - Core database class
-- `vector_registry.py` - Vector storage and retrieval
-- `axis_webapp.py` - Flask web server
-- `models/` - Local sentence transformer model
+- aXis is not optimized for concurrency
+- The Vector retrieval algorithm is inefficient, reducing nodes to search through implementation of hnsw would be beneficial
+- UI could be improved to suggest better exploration of similar answers
 
----
-
-Built with ❤️ using Polars, Delta Lake, and Sentence Transformers

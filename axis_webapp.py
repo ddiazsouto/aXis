@@ -170,6 +170,7 @@ def insert():
         return jsonify({"error": str(e)}), 500
 
 
+
 if __name__ == "__main__":
     print("🚀 aXis Server starting...")
     print(f"📂 Database: {current_db_path}")
